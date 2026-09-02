@@ -1,0 +1,16 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Same trick: copy dependency manifests first for build caching
+COPY package.json package-lock.json ./
+RUN npm install
+
+# Copy the rest of your React source
+COPY . .
+
+EXPOSE 5173
+
+# Vite's dev server; --host makes it listen on all interfaces
+# so it's reachable from your browser outside the container.
+CMD ["npm", "run", "dev", "--", "--host"]

@@ -1,0 +1,27 @@
+# --- Python / Django (backend) ---
+__pycache__/
+*.pyc
+venv/
+env/
+.venv/
+*.sqlite3
+staticfiles/
+
+# --- Node / React (frontend) ---
+node_modules/
+dist/
+build/
+.vite/
+
+# --- Environment & secrets (both) ---
+.env
+.env.local
+
+# --- Editor / OS junk ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Docker ---
+*.log

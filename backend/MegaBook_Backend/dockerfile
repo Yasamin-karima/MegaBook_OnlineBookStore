@@ -1,0 +1,21 @@
+FROM python:3.12-slim
+
+# All following commands run from /app inside the container
+WORKDIR /app
+
+# Copy just requirements.txt first (not all the code yet).
+# This lets Docker cache the "pip install" layer — if you only change
+# your Python code later (not dependencies), rebuilds skip reinstalling.
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Now copy the rest of your Django project code
+COPY . .
+
+# Documents which port the app listens on (doesn't actually publish it —
+# that happens in docker-compose.yml or `docker run -p`)
+EXPOSE 8000
+
+# Command that runs when the container starts.
+# 0.0.0.0 (not 127.0.0.1) so it's reachable from outside the container.
+CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]

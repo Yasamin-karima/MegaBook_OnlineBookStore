@@ -1,0 +1,5 @@
+# backend/.dockerignore
+__pycache__/
+*.pyc
+venv/
+.env

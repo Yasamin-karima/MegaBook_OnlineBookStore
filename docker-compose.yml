@@ -1,0 +1,19 @@
+services:
+  backend:
+    build: ./backend        # look for a Dockerfile in backend/
+    ports:
+      - "8000:8000"          # host_port:container_port
+    volumes:
+      - ./backend:/app        # live-sync your local code into the container
+                               # so code changes reflect without rebuilding
+    command: python manage.py runserver 0.0.0.0:8000
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules      # prevents host's (missing) node_modules
+                                # from overwriting the one installed in the container
+    command: npm run dev -- --host
