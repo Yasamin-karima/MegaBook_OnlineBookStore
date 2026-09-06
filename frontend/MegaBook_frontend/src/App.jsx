@@ -3,7 +3,7 @@ import './index.css';
 import Navbar from './components/Navbar';
 import BottomNavbar from './components/BottomNavbar';
 import BookCard from './components/BookCard';
-
+import HomePage from './components/HomePage';
 
 const App = () => {
   return (
@@ -11,10 +11,10 @@ const App = () => {
 
       <BottomNavbar />
       <Navbar />
-      <div className='pt-20'>
-        <BookCard />
-      </div>
-      
+      {/* <div className='pt-20'>
+        <BookCard image_width={180} />
+      </div> */}
+      <HomePage />
       <html lang="fa" dir="rtl">
         <head>
           <meta charset="UTF-8" />
