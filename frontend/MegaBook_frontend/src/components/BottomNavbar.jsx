@@ -5,11 +5,11 @@ import { PiSwap } from 'react-icons/pi'
 
 const Downbar = () => {
     return (
-        <nav className='flex justify-center fixed inset-x-0 bottom-0 h-14 bg-white rounded-3xl text-gray-500'>
+        <nav className='flex z-10 justify-center fixed inset-x-0 bottom-0 h-14 bg-white rounded-3xl text-gray-500'>
             <div class="w-full flex items-center">
                 <div className="flex flex-auto flex-col items-center">
                     <LuUser className='text-2xl' />
-                    <a href="#" class="text-xs">
+                    <a href="#" className="text-xs">
                         داشبورد
                     </a>
                 </div>

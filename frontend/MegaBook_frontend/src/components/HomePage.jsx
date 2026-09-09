@@ -10,7 +10,7 @@ const bestsellers = [
     author: "Vance Elena",
     price: 24.99,
     rating: 4.8,
-    image: "/assets/books/minimalist-geometry.jpg",
+    image: "/book-covers/249748.jpg",
     badge: "پرفروش",
   },
   {
@@ -19,7 +19,7 @@ const bestsellers = [
     author: "Marcus Aurelius",
     price: 29.5,
     rating: 4.5,
-    image: "/assets/books/high-contrast-design.jpg",
+    image: "/book-covers/301984.jpg",
     badge: "پرفروش",
   },
 ];
@@ -31,7 +31,7 @@ const newArrivals = [
     author: "Vance Elena",
     price: 24.99,
     rating: 4.8,
-    image: "/assets/books/minimalist-geometry.jpg",
+    image: "/book-covers/314226.jpg",
     badge: "جدید",
   },
   {
@@ -40,7 +40,7 @@ const newArrivals = [
     author: "Marcus Aurelius",
     price: 29.5,
     rating: 4.5,
-    image: "/assets/books/high-contrast-design.jpg",
+    image: "/book-covers/329872.jpg",
     badge: "جدید",
   },
   {
@@ -49,7 +49,7 @@ const newArrivals = [
     author: "Sunny Day",
     price: 18.0,
     rating: 4.6,
-    image: "/assets/books/playful-path.jpg",
+    image: "/book-covers/336951.jpg",
     badge: "پرفروش",
   },
   {
@@ -58,7 +58,8 @@ const newArrivals = [
     author: "D. S. Dark",
     price: 32.99,
     rating: 4.7,
-    image: "/assets/books/midnight-textures.jpg",
+    image: "/book-covers/336951.jpg",
+    badge: "پرفروش",
   },
   {
     id: 7,
@@ -66,7 +67,7 @@ const newArrivals = [
     author: "Jane Doe",
     price: 21.99,
     rating: 4.2,
-    image: "/assets/books/modern-fiction.jpg",
+    image: "/book-covers/249748.jpg",
     badge: "جدید",
   },
   {
@@ -75,14 +76,14 @@ const newArrivals = [
     author: "Alan Turing",
     price: 27.0,
     rating: 4.3,
-    image: "/assets/books/abstract-logic.jpg",
+    image: "/book-covers/301984.jpg",
     badge: "جدید",
   },
 ];
 
 export default function HomePage() {
   return (
-    <div className="home-page" dir="rtl">
+    <div className="z-0" dir="rtl">
       <CategoryTabs />
 
       <BookSection title="کتاب‌های پرفروش" books={bestsellers} />
@@ -90,10 +91,6 @@ export default function HomePage() {
 
       <RequestBanner />
 
-      <footer className="home-footer">
-        <p>مگابوک مارکت‌پلیس نسخه ۱.۴.۲</p>
-        <p>تراکنش‌های امن و مبتنی بر مشارکت جامعه</p>
-      </footer>
     </div>
   );
 }
