@@ -1,19 +1,36 @@
 services:
+  db:
+    image: postgres:16
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    env_file:
+      - ./backend/MegaBook_Backend/.env
+    ports:
+      - "5432:5432"
+
+
   backend:
-    build: ./backend        # look for a Dockerfile in backend/
+    build: ./backend/MegaBook_Backend       # look for a Dockerfile in backend/
     ports:
       - "8000:8000"          # host_port:container_port
     volumes:
-      - ./backend:/MegaBook_Backend        # live-sync your local code into the container
+      - ./backend/MegaBook_Backend:/app       # live-sync your local code into the container
                                # so code changes reflect without rebuilding
     command: python manage.py runserver 0.0.0.0:8000
+    env_file:
+      - ./backend/MegaBook_Backend/.env
+    depends_on:
+      - db
 
   frontend:
-    build: ./frontend/
+    build: ./frontend/MegaBook_frontend
     ports:
       - "5173:5173"
     volumes:
-      - ./frontend:/MegaBook_Frontend
-      - /MegaBook_Frontend/node_modules      # prevents host's (missing) node_modules
+      - ./frontend/MegaBook_frontend:/app
+      - /app/node_modules      # prevents host's (missing) node_modules
                                 # from overwriting the one installed in the container
     command: npm run dev -- --host
+  
+volumes:
+  postgres_data:

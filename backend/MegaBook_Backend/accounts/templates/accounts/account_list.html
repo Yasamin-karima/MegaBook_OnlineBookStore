@@ -1,0 +1,9 @@
+<h1>all accounts</h1>
+{% for a in object_list %}
+    <ul>
+        <li>username: {{ a.username }}</li>
+	<li>email: {{ a.email }}</li>
+	<li>password: {{ a.password }}</li>
+    </ul> 
+{% endfor %}
+
