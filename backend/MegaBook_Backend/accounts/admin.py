@@ -1,5 +1,7 @@
 from django.contrib import admin
-from .models import account
+from django.contrib.auth.admin import UserAdmin
 
-# Register your models here.
-admin.site.register(account)
+from .models import Account
+
+# UserAdmin gives the proper user admin page (hashed passwords, change-password form, etc.)
+admin.site.register(Account, UserAdmin)

@@ -1,10 +1,12 @@
+from django.contrib.auth.models import AbstractUser
 from django.db import models
 
-# Create your models here.
-class account(models.Model):
-    username = models.CharField(max_length=100)
+
+class Account(AbstractUser):
+    # AbstractUser already gives us username, password (stored hashed),
+    # first/last name, is_active, is_staff, date_joined, last_login, ...
+    # We only override email to make it required and unique.
     email = models.EmailField(unique=True)
-    password = models.CharField(max_length=100)
 
     def __str__(self):
         return self.username

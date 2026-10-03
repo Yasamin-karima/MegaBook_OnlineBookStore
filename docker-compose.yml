@@ -31,6 +31,9 @@ services:
       - /app/node_modules      # prevents host's (missing) node_modules
                                 # from overwriting the one installed in the container
     command: npm run dev -- --host
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
   
 volumes:
   postgres_data:

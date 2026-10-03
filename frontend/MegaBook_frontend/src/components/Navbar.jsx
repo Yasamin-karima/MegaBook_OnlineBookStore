@@ -1,4 +1,5 @@
 import React from 'react'
+import { Link } from 'react-router-dom'
 import { LuBell } from 'react-icons/lu'
 import logo from '../assets/logo.svg'
 
@@ -12,9 +13,9 @@ const Navbar = () => {
                 <a href='#'>
                     <LuBell className='text-2xl text-[#4c687c]' />
                 </a>
-                <div className='bg-[#4c687c] rounded-2xl w-12 h-8 flex justify-center text-white'>
+                <Link to='/login' className='bg-[#4c687c] rounded-2xl w-12 h-8 flex justify-center text-white'>
                     ورود
-                </div>
+                </Link>
             </div>
         </nav>
     )
