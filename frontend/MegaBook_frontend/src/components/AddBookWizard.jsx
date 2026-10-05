@@ -614,7 +614,8 @@ export default function AddBookWizard({ onBack }) {
                     className={inputClass("publication_year", "abw-ltr")}
                     inputMode="numeric"
                     value={form.publication_year}
-                    placeholder="2023"
+                    // placeholder="2023"
+                    hint="شمسی یا میلادی، همان‌طور که در شناسنامه‌ی کتاب آمده."
                     onChange={(e) => setField("publication_year", onlyDigits(e.target.value).slice(0, 4))}
                   />
                 </Field>
