@@ -14,6 +14,8 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+from django.conf import settings
+from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import path, include
 
@@ -21,4 +23,9 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('accounts/', include('accounts.urls')),
     path('api/', include('api.urls')),
+    path('catalog/', include('catalog.urls')),
 ]
+
+# فایل‌های آپلودشده (جلد، PDF) را در حالت توسعه خود جنگو سرو می‌کند.
+# static() وقتی DEBUG خاموش باشد چیزی اضافه نمی‌کند؛ در production باید وب‌سرور این کار را بکند.
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

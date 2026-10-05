@@ -1,7 +1,24 @@
 @import "tailwindcss";
 
+/* فونت وزیرمتن (نسخه‌ی جدید فونت وزیر)، از ریلیز رسمی v33.003:
+   https://github.com/rastikerdar/vazirmatn — مجوز OFL کنار فایل فونت است.
+   فایل variable است: یک فایل همه‌ی وزن‌ها (۱۰۰ تا ۹۰۰) را دارد.
+   فایل داخل پروژه است، نه از CDN، تا بدون وابستگی به سرویس بیرونی بارگذاری شود. */
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("./assets/fonts/Vazirmatn-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap; /* تا فونت بارگذاری شود، متن با فونت سیستم دیده می‌شود */
+}
+
+/* فونت پیش‌فرض Tailwind (font-sans) را وزیرمتن می‌کنیم؛ کل برنامه از همین ارث می‌برد */
+@theme {
+  --font-sans: "Vazirmatn", ui-sans-serif, system-ui, sans-serif;
+}
+
 body {
-            font-family: 'Inter', sans-serif;
+            font-family: var(--font-sans);
             background-color: #f8f9fa;
         }
         .book-card {

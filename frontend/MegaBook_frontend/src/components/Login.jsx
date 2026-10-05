@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import logo from "../assets/logo.svg";
 // 🔌 اتصال به بکند: POST /accounts/login/ (در src/api/auth.js)
 // توکن‌ها همان‌جا در localStorage ذخیره می‌شوند.
@@ -8,6 +8,9 @@ import { loginUser } from "../api/auth";
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  // اگر ProtectedRoute کاربر را به اینجا فرستاده باشد، آدرس صفحه‌ی قبلی در state است
+  const location = useLocation();
+  const redirectTo = location.state?.from?.pathname || "/";
   // مقدار فیلدها (controlled inputs: مقدار هر input از state خوانده می‌شود)
   const [form, setForm] = useState({ username: "", password: "" });
   // خطای هر فیلد به‌صورت جدا، مثلاً { username: "..." }
@@ -53,8 +56,9 @@ export default function LoginPage() {
 
       setSuccess(true);
 
-      // بعد از ورود موفق، پیام موفقیت کوتاه دیده می‌شود و کاربر به صفحه اصلی می‌رود.
-      setTimeout(() => navigate("/", { replace: true }), 800);
+      // بعد از ورود موفق، پیام موفقیت کوتاه دیده می‌شود و کاربر به صفحه‌ای که می‌خواست
+      // (یا صفحه اصلی) می‌رود.
+      setTimeout(() => navigate(redirectTo, { replace: true }), 800);
     } catch (err) {
       const status = err.response?.status;
       if (status === 401) {
