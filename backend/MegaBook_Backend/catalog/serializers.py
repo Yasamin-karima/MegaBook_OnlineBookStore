@@ -1,6 +1,7 @@
 from django.db import IntegrityError, transaction
 from rest_framework import serializers
 
+from .isbn import ISBN_CHECKSUM, isbn13_is_valid
 from .models import Book, Category, Person, Publisher, Tag
 
 MAX_COVER_MB = 5
@@ -28,14 +29,7 @@ def messages(**overrides):
 
 
 ISBN_LENGTH = "شابک باید ۱۳ رقم باشد."
-ISBN_CHECKSUM = "شابک نامعتبر است. رقم کنترلی آن درست نیست؛ شابک را با روی جلد مقایسه کنید."
 ISBN_TAKEN = "کتابی با این شابک قبلاً ثبت شده است."
-
-
-def isbn13_is_valid(isbn):
-    # رقم‌های فرد در ۱ و رقم‌های زوج در ۳ ضرب می‌شوند؛ رقم سیزدهم باید جمع را به مضرب ۱۰ برساند
-    total = sum(int(d) * (1 if i % 2 == 0 else 3) for i, d in enumerate(isbn[:12]))
-    return (10 - total % 10) % 10 == int(isbn[12])
 
 
 def is_pdf(file):
@@ -108,8 +102,10 @@ class BookCreateSerializer(serializers.ModelSerializer):
     cover = serializers.ImageField(
         error_messages=messages(required="تصویر جلد را انتخاب کنید.", empty="تصویر جلد را انتخاب کنید.")
     )
+    # write_only: فایل کامل کتاب محتوای پولی است و آدرسش در هیچ پاسخی برنمی‌گردد
     book_file = serializers.FileField(
-        error_messages=messages(required="فایل PDF کتاب را انتخاب کنید.", empty="فایل PDF کتاب را انتخاب کنید.")
+        write_only=True,
+        error_messages=messages(required="فایل PDF کتاب را انتخاب کنید.", empty="فایل PDF کتاب را انتخاب کنید."),
     )
     sample_file = serializers.FileField(required=False, error_messages=messages())
 
@@ -127,7 +123,7 @@ class BookCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Book
-        # به ترتیب فیلدها در فرم (AddBookForm)؛ DRF خطاها را به همین ترتیب برمی‌گرداند
+        # به ترتیب فیلدها در فرم (AddBookWizard)؛ DRF خطاها را به همین ترتیب برمی‌گرداند
         # و فرم به اولین خطا اسکرول می‌کند
         fields = [
             "id", "cover", "title", "original_title", "authors", "translators",
@@ -223,3 +219,49 @@ class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
         fields = ["id", "name"]
+
+
+# ---------------------------------------------------------------------------
+# فقط‌خواندنی: برای صفحه‌ی اصلی و صفحه‌ی جزئیات کتاب
+#
+# نکته‌ی امنیتی: book_file عمداً در هیچ‌کدام از این دو نیست (محتوای پولی).
+# اگر روزی فیلدی اضافه می‌کنید، فهرست fields را دستی بنویسید، هرگز "__all__".
+# ---------------------------------------------------------------------------
+
+class BookListSerializer(serializers.ModelSerializer):
+    """کارت کتاب در فهرست. هر رابطه‌ای که اینجا هست باید در view پیش‌واکشی شود (N+1)."""
+
+    # SlugRelatedField به‌جای id، مقدار یک فیلد از شیء مرتبط را برمی‌گرداند؛ اینجا name
+    authors = serializers.SlugRelatedField(many=True, read_only=True, slug_field="name")
+    # {id, name} یا null
+    category = CategorySerializer(read_only=True)
+    # cover خودکار ImageField است: با request در context آدرس کامل می‌دهد و اگر خالی باشد null
+
+    class Meta:
+        model = Book
+        fields = ["id", "title", "authors", "cover", "price", "category", "language", "created_at"]
+
+
+class BookDetailSerializer(BookListSerializer):
+    """همه‌ی فیلدهای فهرست، به‌علاوه‌ی جزئیات صفحه‌ی کتاب."""
+
+    translators = serializers.SlugRelatedField(many=True, read_only=True, slug_field="name")
+    tags = serializers.SlugRelatedField(many=True, read_only=True, slug_field="name")
+    # نام ناشر یا null (DRF برای رابطه‌ی خالی خودش null می‌گذارد)
+    publisher = serializers.SlugRelatedField(read_only=True, slug_field="name")
+    file_size = serializers.SerializerMethodField()
+
+    class Meta(BookListSerializer.Meta):
+        fields = BookListSerializer.Meta.fields + [
+            "original_title", "isbn", "translators", "publisher", "tags",
+            "description", "page_count", "publication_year", "edition",
+            "sample_file", "file_size",
+        ]
+
+    def get_file_size(self, book):
+        # حجم فایل کامل به بایت، بدون لو دادن آدرسش. اگر فایل روی دیسک گم شده باشد،
+        # به‌جای خطای ۵۰۰ مقدار null برمی‌گردد.
+        try:
+            return book.file_size
+        except OSError:
+            return None

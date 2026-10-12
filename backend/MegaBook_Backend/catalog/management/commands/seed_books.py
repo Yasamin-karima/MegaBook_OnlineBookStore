@@ -24,7 +24,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from catalog.management.seed_data import CATEGORIES, SAMPLE_BOOKS
 from catalog.models import Book, Category, Person, Publisher, Tag
-from catalog.serializers import isbn13_is_valid
+from catalog.isbn import isbn13_is_valid
 
 FONT_PATH = Path(__file__).resolve().parent.parent / "fonts" / "Vazirmatn-Bold.ttf"
 COVER_SIZE = (600, 900)
