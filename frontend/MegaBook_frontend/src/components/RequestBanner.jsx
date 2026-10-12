@@ -1,7 +1,9 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { LuBookOpen, LuArrowLeft } from 'react-icons/lu';
 
 const RequestBanner = () => {
+  const navigate = useNavigate();
   return (
     <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl mx-4 my-8 p-6 md:p-8 shadow-lg">
       <div className="flex flex-col md:flex-row items-center justify-between gap-4">
@@ -17,7 +19,9 @@ const RequestBanner = () => {
           </p>
         </div>
         
-        <button className="flex items-center gap-2 bg-white text-blue-700 hover:bg-blue-50 px-5 py-2.5 rounded-xl font-medium transition-all duration-200 shadow-md hover:shadow-lg whitespace-nowrap">
+        <button
+          onClick={() => navigate('/requests/new')}
+          className="flex items-center gap-2 bg-white text-blue-700 hover:bg-blue-50 px-5 py-2.5 rounded-xl font-medium transition-all duration-200 shadow-md hover:shadow-lg whitespace-nowrap">
           درخواست بر اساس شابک
           <LuArrowLeft className="w-4 h-4" />
         </button>

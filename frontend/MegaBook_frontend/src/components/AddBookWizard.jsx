@@ -1,17 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { createBook, getCategories } from "../api/catalog";
+import { createBook, getCategories, lookupIsbn } from "../api/catalog";
+import { LANGUAGES, formatFileSize, languageName, toFaNumber, toFaYear } from "../utils/format";
 
-// فرم چندمرحله‌ای بارگذاری کتاب. فیلدها در ۵ مرحله‌ی مرتبط دسته‌بندی شده‌اند (آرایه‌ی STEPS)
+// فرم چندمرحله‌ای بارگذاری کتاب. فیلدها در ۶ مرحله‌ی مرتبط دسته‌بندی شده‌اند (آرایه‌ی STEPS)
 // و نوار بالای فرم نشان می‌دهد کاربر کجاست. داده با buildFormData به شکل multipart
 // به POST /catalog/books/ فرستاده می‌شود.
+//
+// مرحله‌ی اول شابک است: کاربر می‌تواند با «دریافت اطلاعات» مشخصات را از Open Library
+// (از طریق GET /catalog/isbn-lookup/) بگیرد تا فیلدهای خالی پر شوند، و بعد در مرحله‌های
+// بعدی همه را بررسی و اصلاح کند. دریافت اطلاعات اختیاری است؛ فرم دستی هم کامل کار می‌کند.
 
-const LANGUAGES = [
-  { code: "en", name: "انگلیسی" },
-  { code: "fa", name: "فارسی" },
-  { code: "ar", name: "عربی" },
-  { code: "fr", name: "فرانسوی" },
-  { code: "de", name: "آلمانی" },
-];
+const ISBN_TAKEN = "این کتاب قبلاً در مگابوک ثبت شده است";
 
 const MAX_COVER_MB = 5;
 
@@ -39,11 +38,12 @@ const EMPTY_FORM = {
 // هر مرحله فیلدهای مرتبط به هم را دارد. label کوتاه برای نوار مراحل است، title برای عنوان مرحله.
 // fields برای دو کار لازم است: اعتبارسنجی همان مرحله، و پیدا کردن مرحله‌ای که خطای سرور در آن است.
 const STEPS = [
+  { label: "شابک", title: "شابک کتاب", fields: ["isbn"] },
   { label: "مشخصات", title: "مشخصات کتاب", fields: ["title", "original_title", "authors", "translators"] },
   {
     label: "نشر",
     title: "اطلاعات نشر",
-    fields: ["isbn", "edition", "language", "publisher", "page_count", "publication_year"],
+    fields: ["edition", "language", "publisher", "page_count", "publication_year"],
   },
   { label: "دسته‌بندی", title: "توضیحات و دسته‌بندی", fields: ["description", "category", "tags"] },
   { label: "فایل‌ها", title: "جلد و فایل‌ها", fields: ["cover", "book_file", "sample_file"] },
@@ -51,10 +51,7 @@ const STEPS = [
 ];
 
 /* ---------- توابع کمکی ---------- */
-
-function toFaNumber(n) {
-  return n.toLocaleString("fa-IR");
-}
+// قالب‌بندی عدد، سال، حجم فایل و نام زبان در src/utils/format.js است (مشترک با بقیه‌ی صفحه‌ها)
 
 // کیبورد فارسی رقم‌های ۰ تا ۹ را تایپ می‌کند؛ دیتابیس رقم لاتین می‌خواهد
 function toLatinDigits(text) {
@@ -67,15 +64,6 @@ function onlyDigits(text) {
   return toLatinDigits(text).replace(/\D/g, "");
 }
 
-function formatSize(bytes) {
-  const mb = bytes / (1024 * 1024);
-  if (mb >= 1) {
-    return `${mb.toLocaleString("fa-IR", { maximumFractionDigits: 1 })} مگابایت`;
-  }
-  const kb = Math.max(1, Math.round(bytes / 1024));
-  return `${kb.toLocaleString("fa-IR")} کیلوبایت`;
-}
-
 function isPdf(file) {
   return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
 }
@@ -85,11 +73,14 @@ function isCoverImage(file) {
 }
 
 // همه‌ی خطاهای فرم؛ validateStep فقط خطاهای یک مرحله را از این بیرون می‌کشد
-function validateAll(form, accepted) {
+// isbnTaken: جستجوی شابک گفته این کتاب در مگابوک هست؛ تا شابک عوض نشود، نمی‌شود جلو رفت
+// (سرور هم شابک تکراری را رد می‌کند، بهتر است کاربر همین اول بفهمد نه بعد از پنج مرحله)
+function validateAll(form, accepted, isbnTaken = false) {
   const errors = {};
   if (!form.title.trim()) errors.title = "عنوان کتاب را وارد کنید.";
   if (form.authors.length === 0) errors.authors = "دست‌کم نام یک نویسنده را وارد کنید.";
   if (form.isbn.length !== 13) errors.isbn = "شابک باید ۱۳ رقم باشد.";
+  else if (isbnTaken) errors.isbn = ISBN_TAKEN;
   if (!form.language) errors.language = "زبان کتاب را انتخاب کنید.";
   if (form.publication_year && form.publication_year.length !== 4) {
     errors.publication_year = "سال را چهاررقمی وارد کنید.";
@@ -101,13 +92,55 @@ function validateAll(form, accepted) {
   return errors;
 }
 
-function validateStep(index, form, accepted) {
-  const all = validateAll(form, accepted);
+function validateStep(index, form, accepted, isbnTaken = false) {
+  const all = validateAll(form, accepted, isbnTaken);
   const result = {};
   STEPS[index].fields.forEach((name) => {
     if (all[name]) result[name] = all[name];
   });
   return result;
+}
+
+// نام فارسی فیلدها برای پیام «این‌ها پر شدند»
+const FIELD_NAMES = {
+  title: "عنوان",
+  authors: "نویسنده‌ها",
+  publisher: "ناشر",
+  page_count: "تعداد صفحات",
+  publication_year: "سال انتشار",
+};
+
+// سال انتشار پر می‌شود ولی قفل نمی‌شود: Open Library معمولاً سال میلادی دارد و کتاب فارسی
+// باید سال شمسیِ چاپ‌شده در کتاب را داشته باشد (DECISIONS ۳.۳)، پس کاربر باید بتواند اصلاحش کند.
+const EDITABLE_LOOKUP_FIELDS = ["publication_year"];
+
+const LOCKED_HINT =
+  "از Open Library آمده و قابل تغییر نیست. اگر نادرست است، در مرحله‌ی «شابک» گزینه‌ی «اطلاعات درست نیست» را بزنید.";
+
+// جواب جستجو را به شکل مقدارهای فرم درمی‌آورد؛ فقط فیلدهایی که Open Library واقعاً داده.
+// فیلدی که اینجا نیست (null در جواب) قفل نمی‌شود و کاربر خودش پرش می‌کند.
+// جلد، برچسب، دسته‌بندی، زبان و توضیحات عمداً اینجا نیستند.
+function lookupValues(data) {
+  const values = {};
+  if (data.title) values.title = data.title;
+  if (data.authors?.length > 0) values.authors = data.authors;
+  if (data.publisher) values.publisher = data.publisher;
+  // همان محدودیت طولی که inputها دارند
+  if (data.page_count) values.page_count = String(data.page_count).slice(0, 5);
+  if (data.publication_year) values.publication_year = String(data.publication_year).slice(0, 4);
+  return values;
+}
+
+// داده‌ی دریافت‌شده را از فرم برمی‌دارد (وقتی شابک عوض می‌شود یا کاربر «اطلاعات درست نیست» می‌زند).
+// فیلدهای قفل همیشه خالی می‌شوند؛ سال (تنها فیلد دریافتیِ قابل ویرایش) فقط اگر کاربر عوضش نکرده باشد.
+// تابع خالص است: فرم جدید برمی‌گرداند.
+function clearFetched(form, fetched) {
+  const next = { ...form };
+  Object.entries(fetched).forEach(([field, value]) => {
+    const editedByUser = EDITABLE_LOOKUP_FIELDS.includes(field) && form[field] !== value;
+    if (!editedByUser) next[field] = EMPTY_FORM[field];
+  });
+  return next;
 }
 
 // چون فایل داریم، داده به‌جای JSON در قالب FormData (multipart) فرستاده می‌شود
@@ -170,12 +203,14 @@ function toFieldErrors(data) {
 
 /* ---------- اجزای کوچک ---------- */
 
-function Field({ id, label, optional, hint, error, children }) {
+// locked: مقدار از Open Library آمده و فقط‌خواندنی است؛ کنار برچسب نشان داده می‌شود
+function Field({ id, label, optional, hint, error, locked = false, children }) {
   return (
     <div className="abw-field">
       <label className="abw-label" htmlFor={id}>
         {label}
         {optional && <span className="abw-optional"> (اختیاری)</span>}
+        {locked && <span className="abw-source">از Open Library</span>}
       </label>
       {children}
       {hint && !error && <p className="abw-hint">{hint}</p>}
@@ -189,8 +224,21 @@ function Field({ id, label, optional, hint, error, children }) {
 }
 
 // ورودی چندمقداری: برای نویسنده‌ها، مترجم‌ها و برچسب‌ها
-function ChipsInput({ id, values, onChange, placeholder, invalid }) {
+// readOnly: فقط نمایش نام‌ها، بدون دکمه‌ی حذف و بدون جای تایپ (نویسنده‌های دریافتی از Open Library)
+function ChipsInput({ id, values, onChange, placeholder, invalid, readOnly = false }) {
   const [draft, setDraft] = useState("");
+
+  if (readOnly) {
+    return (
+      <div id={id} className="abw-chips abw-locked" aria-readonly="true">
+        {values.map((value) => (
+          <span key={value} className="abw-chip abw-chip-locked">
+            {value}
+          </span>
+        ))}
+      </div>
+    );
+  }
 
   const commit = () => {
     const name = draft.trim();
@@ -240,7 +288,7 @@ function PdfPicker({ id, file, invalid, onPick }) {
       {file ? (
         <>
           <span className="abw-file-name">{file.name}</span>
-          <span className="abw-file-size">{formatSize(file.size)}</span>
+          <span className="abw-file-size">{formatFileSize(file.size)}</span>
         </>
       ) : (
         <span className="abw-file-name abw-file-empty">انتخاب فایل PDF</span>
@@ -283,6 +331,44 @@ function StepBar({ current, maxReached, onJump }) {
   );
 }
 
+// خلاصه‌ی چیزی که Open Library پیدا کرد، در مرحله‌ی شابک. مقدارهای null نمایش داده نمی‌شوند.
+function FoundBook({ book }) {
+  const [coverFailed, setCoverFailed] = useState(false);
+  return (
+    <div className="abw-found">
+      {book.cover_url && !coverFailed ? (
+        <img src={book.cover_url} alt="" onError={() => setCoverFailed(true)} />
+      ) : (
+        <span className="abw-found-ph" aria-hidden="true">📘</span>
+      )}
+      <div className="abw-found-body">
+        {book.title && <p dir="auto" className="abw-found-title">{book.title}</p>}
+        {book.authors.length > 0 && <p dir="auto">{book.authors.join("، ")}</p>}
+        <dl>
+          {book.publisher && (
+            <div>
+              <dt>ناشر:</dt>
+              <dd dir="auto">{book.publisher}</dd>
+            </div>
+          )}
+          {book.publication_year && (
+            <div>
+              <dt>سال:</dt>
+              <dd>{toFaYear(book.publication_year)}</dd>
+            </div>
+          )}
+          {book.page_count && (
+            <div>
+              <dt>تعداد صفحات:</dt>
+              <dd>{toFaNumber(book.page_count)}</dd>
+            </div>
+          )}
+        </dl>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- فرم اصلی ---------- */
 
 export default function AddBookWizard({ onBack }) {
@@ -296,7 +382,23 @@ export default function AddBookWizard({ onBack }) {
   const [coverPreview, setCoverPreview] = useState("");
   const [categories, setCategories] = useState([]);
 
+  // --- دریافت اطلاعات از روی شابک ---
+  const [lookupLoading, setLookupLoading] = useState(false);
+  // جواب 200 جستجو (برای کارت خلاصه و پیش‌نمایش جلد) یا null
+  const [lookupResult, setLookupResult] = useState(null);
+  // پیام زیر فیلد شابک که خطای فیلد نیست: { tone: "success" | "warn", text }
+  const [lookupNotice, setLookupNotice] = useState(null);
+  // جستجو گفته این کتاب در مگابوک هست؛ تا شابک عوض نشود جلو رفتن ممنوع است
+  const [isbnTaken, setIsbnTaken] = useState(false);
+  // مقدارهایی که از Open Library آمد: { title: "…", authors: ["…"], … }
+  // هر فیلدی که اینجا هست (جز سال) قفل است. با این می‌دانیم هنگام عوض شدن شابک چه چیزی را پاک کنیم.
+  const [fetched, setFetched] = useState({});
+  // پیام «اطلاعات شابک قبلی پاک شد»؛ تا جستجوی بعدی می‌ماند، نه فقط تا حرف بعدی
+  const [clearedNotice, setClearedNotice] = useState(false);
+
   const topRef = useRef(null);
+  // شماره‌ی آخرین جستجو؛ جوابی که مال شابک قبلی است دور ریخته می‌شود
+  const latestLookup = useRef(0);
   const headingRef = useRef(null);
   // بعد از عوض شدن مرحله، کجا برویم: { field } یعنی اولین فیلد خطادار، {} یعنی عنوان مرحله
   const focusRequest = useRef(null);
@@ -336,6 +438,112 @@ export default function AddBookWizard({ onBack }) {
     setError(name, undefined);
   };
 
+  // فیلد از Open Library آمده و قفل است؟ (سال هیچ‌وقت قفل نیست)
+  const isLocked = (name) => name in fetched && !EDITABLE_LOOKUP_FIELDS.includes(name);
+  const hasFetched = Object.keys(fetched).length > 0;
+
+  // شابک عوض شد: فرض می‌کنیم کاربر کتاب دیگری را می‌خواهد. نتیجه‌ی جستجوی قبلی (پیام، کارت،
+  // پیش‌نمایش جلد، «ثبت شده») و همه‌ی داده‌ی دریافت‌شده پاک می‌شود و قفل‌ها باز می‌شوند.
+  // جستجوی در راه هم بی‌اثر می‌شود تا جوابش روی شابک جدید ننشیند.
+  const changeIsbn = (value) => {
+    setField("isbn", value);
+    latestLookup.current += 1;
+    setLookupLoading(false);
+    setLookupResult(null);
+    setLookupNotice(null);
+    setIsbnTaken(false);
+
+    if (hasFetched) {
+      // روی آخرین نسخه‌ی فرم (prev) اعمال می‌شود
+      setForm((prev) => clearFetched(prev, fetched));
+      setFetched({});
+      // فیلدهای پاک‌شده در مرحله‌های دیگرند؛ کاربر باید بداند
+      setClearedNotice(true);
+    }
+  };
+
+  // «اطلاعات درست نیست، خودم وارد می‌کنم»: داده‌ی Open Library کنار می‌رود و کتاب مثل حالتی
+  // ثبت می‌شود که «دریافت اطلاعات» زده نشده بود. یا کل داده‌ی Open Library، یا کل ورود دستی.
+  const discardFetched = () => {
+    setForm((prev) => clearFetched(prev, fetched));
+    setFetched({});
+    setLookupResult(null);
+    setLookupNotice({
+      tone: "warn",
+      text: "اطلاعات دریافت‌شده کنار گذاشته شد. مشخصات را در مرحله‌های بعد خودتان وارد کنید.",
+    });
+  };
+
+  const canLookup = form.isbn.length === 13 && !lookupLoading;
+
+  const handleLookup = async () => {
+    if (!canLookup) return;
+    const lookupId = ++latestLookup.current;
+    setLookupLoading(true);
+    setLookupResult(null);
+    setLookupNotice(null);
+    setClearedNotice(false);
+    setIsbnTaken(false);
+    setError("isbn", undefined);
+
+    try {
+      const data = await lookupIsbn(form.isbn);
+      if (lookupId !== latestLookup.current) return; // در این فاصله شابک عوض شده
+
+      if (data.already_exists) {
+        // کتاب در مگابوک هست: هیچ چیز پر نمی‌شود
+        setIsbnTaken(true);
+        setError("isbn", ISBN_TAKEN);
+        return;
+      }
+
+      // داده‌ی Open Library معتبر حساب می‌شود: جای هر چه در این فیلدها بود را می‌گیرد (حتی
+      // اگر کاربر قبلاً چیزی نوشته بود) و قفل می‌شود. فیلدهایی که Open Library نداد دست نمی‌خورند.
+      const values = lookupValues(data);
+      const filled = Object.keys(values);
+      setForm((prev) => ({ ...prev, ...values }));
+      setErrors((prev) => {
+        const next = { ...prev };
+        filled.forEach((field) => delete next[field]);
+        return next;
+      });
+      setFetched(values);
+
+      setLookupResult(data);
+      setLookupNotice(
+        filled.length > 0
+          ? { tone: "success", text: `اطلاعات دریافت شد: ${filled.map((f) => FIELD_NAMES[f]).join("، ")}` }
+          : { tone: "warn", text: "Open Library این کتاب را دارد ولی مشخصاتش خالی است. مشخصات را خودتان وارد کنید." }
+      );
+    } catch (err) {
+      if (lookupId !== latestLookup.current) return;
+      const status = err.response?.status;
+      const data = err.response?.data;
+
+      if (data?.already_exists) {
+        // 404 یا 502 هم already_exists دارند: کتاب در مگابوک هست، حتی اگر Open Library ندارد
+        setIsbnTaken(true);
+        setError("isbn", ISBN_TAKEN);
+      } else if (status === 400 && data?.isbn) {
+        // شابک نامعتبر (مثلاً رقم کنترلی): خطای خود فیلد
+        setError("isbn", data.isbn[0]);
+      } else if ((status === 404 || status === 502) && data?.detail) {
+        // پیدا نشد یا Open Library در دسترس نیست: ایراد از ورودی نیست، پس پیام خنثی
+        setLookupNotice({ tone: "warn", text: data.detail });
+      } else {
+        setLookupNotice({
+          tone: "warn",
+          text:
+            status === 401
+              ? "برای دریافت اطلاعات ابتدا وارد حساب کاربری شوید."
+              : "دریافت اطلاعات انجام نشد. می‌توانید مشخصات را دستی وارد کنید.",
+        });
+      }
+    } finally {
+      if (lookupId === latestLookup.current) setLookupLoading(false);
+    }
+  };
+
   const setPreview = (url) => {
     if (previewRef.current) URL.revokeObjectURL(previewRef.current);
     previewRef.current = url;
@@ -371,7 +579,7 @@ export default function AddBookWizard({ onBack }) {
   // اگر یکی ایراد داشت، همان‌جا می‌مانیم و خطاها را نشان می‌دهیم.
   const goTo = (target) => {
     for (let i = step; i < target; i++) {
-      const found = validateStep(i, form, accepted);
+      const found = validateStep(i, form, accepted, isbnTaken);
       const firstInvalid = Object.keys(found)[0];
       if (firstInvalid) {
         focusRequest.current = { field: firstInvalid };
@@ -392,12 +600,19 @@ export default function AddBookWizard({ onBack }) {
     setStep(0);
     setMaxReached(0);
     setPreview("");
+    latestLookup.current += 1;
+    setLookupLoading(false);
+    setLookupResult(null);
+    setLookupNotice(null);
+    setIsbnTaken(false);
+    setFetched({});
+    setClearedNotice(false);
   };
 
   const handleSubmit = async () => {
     // همه‌ی مرحله‌ها را دوباره چک می‌کنیم؛ ممکن است کاربر برگشته و چیزی را پاک کرده باشد
     for (let i = 0; i < STEPS.length; i++) {
-      const found = validateStep(i, form, accepted);
+      const found = validateStep(i, form, accepted, isbnTaken);
       const firstInvalid = Object.keys(found)[0];
       if (firstInvalid) {
         focusRequest.current = { field: firstInvalid };
@@ -436,18 +651,27 @@ export default function AddBookWizard({ onBack }) {
     `abw-input ${extra} ${errors[name] ? "abw-invalid" : ""}`;
 
   const isLast = step === STEPS.length - 1;
-  const languageName = LANGUAGES.find((l) => l.code === form.language)?.name;
+  const languageLabel = form.language ? languageName(form.language) : undefined;
   const categoryName = categories.find((c) => String(c.id) === String(form.category))?.name;
 
   // خلاصه‌ی مرحله‌ی آخر: هر ردیف با دکمه‌ی «ویرایش» به مرحله‌ی خودش برمی‌گردد
   const summary = [
-    { step: 0, label: "عنوان", value: form.title.trim() },
-    { step: 0, label: "نویسنده‌ها", value: form.authors.join("، ") },
-    { step: 1, label: "شابک", value: form.isbn, ltr: true },
-    { step: 1, label: "زبان", value: languageName },
-    { step: 2, label: "موضوع", value: categoryName },
-    { step: 3, label: "فایل کتاب", value: form.book_file?.name, ltr: true },
+    { step: 0, label: "شابک", value: form.isbn, ltr: true },
+    { step: 1, label: "عنوان", value: form.title.trim() },
+    { step: 1, label: "نویسنده‌ها", value: form.authors.join("، ") },
+    { step: 2, label: "زبان", value: languageLabel },
+    { step: 3, label: "موضوع", value: categoryName },
+    { step: 4, label: "فایل کتاب", value: form.book_file?.name, ltr: true },
   ];
+
+  // راهنمای سال: Open Library معمولاً سال میلادی می‌دهد، ولی قرار ما برای کتاب فارسی
+  // سال شمسیِ چاپ‌شده در کتاب است. فقط وقتی سال از جستجو آمده و کاربر هنوز عوضش نکرده.
+  const yearHint =
+    form.language === "fa" &&
+    fetched.publication_year &&
+    form.publication_year === fetched.publication_year
+      ? "این سال از Open Library آمده و ممکن است میلادی باشد. برای کتاب فارسی، سالی را بنویسید که در شناسنامه‌ی کتاب چاپ شده (معمولاً شمسی)."
+      : "شمسی یا میلادی، همان‌طور که در شناسنامه‌ی کتاب آمده.";
 
   return (
     <div className="abw" dir="rtl" ref={topRef}>
@@ -485,14 +709,83 @@ export default function AddBookWizard({ onBack }) {
             </h2>
           </div>
 
-          {/* ---------- ۱. مشخصات کتاب ---------- */}
+          {/* ---------- ۱. شابک و دریافت اطلاعات ---------- */}
           {step === 0 && (
             <section className="abw-section">
-              <Field id="abw-title" label="عنوان کتاب" error={errors.title}>
+              <Field
+                id="abw-isbn"
+                label="شابک (ISBN-13)"
+                hint="با «دریافت اطلاعات»، فیلدهای خالی فرم از Open Library پر می‌شوند. همه را در مرحله‌های بعد می‌توانید اصلاح کنید."
+                error={errors.isbn}
+              >
+                <div className="abw-isbn-row">
+                  <input
+                    id="abw-isbn"
+                    className={inputClass("isbn", "abw-ltr")}
+                    inputMode="numeric"
+                    value={form.isbn}
+                    placeholder="9781234567890"
+                    onChange={(e) => changeIsbn(onlyDigits(e.target.value).slice(0, 13))}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleLookup();
+                      }
+                    }}
+                  />
+                  {/* فقط با ۱۳ رقم فعال است؛ رقم کنترلی را سرور بررسی می‌کند (خطای 400 زیر همین فیلد) */}
+                  <button type="button" className="abw-lookup" disabled={!canLookup} onClick={handleLookup}>
+                    {lookupLoading && <span className="abw-spinner" aria-hidden="true" />}
+                    {lookupLoading ? "در حال دریافت…" : "دریافت اطلاعات"}
+                  </button>
+                </div>
+              </Field>
+
+              {/* پیام‌هایی که خطای فیلد نیستند: پر شدن موفق، پیدا نشدن، در دسترس نبودن */}
+              {lookupNotice && (
+                <p className={`abw-lookup-msg abw-lookup-${lookupNotice.tone}`} role="status">
+                  {lookupNotice.text}
+                </p>
+              )}
+
+              {/* فیلدهای پاک‌شده در مرحله‌های دیگرند و کاربر نمی‌بیندشان؛ این پیام خبرش می‌کند */}
+              {clearedNotice && (
+                <p className="abw-lookup-msg abw-lookup-warn" role="status">
+                  اطلاعات دریافت‌شده از شابک قبلی پاک شد. برای شابک جدید دوباره «دریافت اطلاعات» را بزنید.
+                </p>
+              )}
+
+              {lookupResult && <FoundBook book={lookupResult} />}
+
+              {/* راه خروج از داده‌ی قفل‌شده: کل داده‌ی Open Library کنار می‌رود و ورود دستی می‌شود */}
+              {hasFetched && (
+                <button type="button" className="abw-discard" onClick={discardFetched}>
+                  اطلاعات درست نیست، خودم وارد می‌کنم
+                </button>
+              )}
+
+              <div className="abw-notice">
+                <span aria-hidden="true">⚠️</span>
+                <span>شابک باید با شابک روی جلد یکی باشد.</span>
+              </div>
+            </section>
+          )}
+
+          {/* ---------- ۲. مشخصات کتاب ---------- */}
+          {step === 1 && (
+            <section className="abw-section">
+              <Field
+                id="abw-title"
+                label="عنوان کتاب"
+                locked={isLocked("title")}
+                hint={isLocked("title") ? LOCKED_HINT : undefined}
+                error={errors.title}
+              >
                 <input
                   id="abw-title"
-                  className={inputClass("title")}
+                  className={inputClass("title", isLocked("title") ? "abw-locked" : "")}
                   value={form.title}
+                  readOnly={isLocked("title")}
                   placeholder="مثلاً: کتابخانه نیمه‌شب"
                   onChange={(e) => setField("title", e.target.value)}
                 />
@@ -514,11 +807,18 @@ export default function AddBookWizard({ onBack }) {
                 />
               </Field>
 
-              <Field id="abw-authors" label="نویسنده‌ها" hint="بعد از هر نام، Enter بزنید." error={errors.authors}>
+              <Field
+                id="abw-authors"
+                label="نویسنده‌ها"
+                locked={isLocked("authors")}
+                hint={isLocked("authors") ? LOCKED_HINT : "بعد از هر نام، Enter بزنید."}
+                error={errors.authors}
+              >
                 <ChipsInput
                   id="abw-authors"
                   values={form.authors}
                   invalid={Boolean(errors.authors)}
+                  readOnly={isLocked("authors")}
                   placeholder="نام نویسنده"
                   onChange={(list) => setField("authors", list)}
                 />
@@ -542,31 +842,19 @@ export default function AddBookWizard({ onBack }) {
             </section>
           )}
 
-          {/* ---------- ۲. اطلاعات نشر ---------- */}
-          {step === 1 && (
+          {/* ---------- ۳. اطلاعات نشر ---------- */}
+          {step === 2 && (
             <section className="abw-section">
-              <div className="abw-row">
-                <Field id="abw-isbn" label="شابک (ISBN-13)" error={errors.isbn}>
-                  <input
-                    id="abw-isbn"
-                    className={inputClass("isbn", "abw-ltr")}
-                    inputMode="numeric"
-                    value={form.isbn}
-                    placeholder="9781234567890"
-                    onChange={(e) => setField("isbn", onlyDigits(e.target.value).slice(0, 13))}
-                  />
-                </Field>
-
-                <Field id="abw-edition" label="ویرایش" optional error={errors.edition}>
-                  <input
-                    id="abw-edition"
-                    className={inputClass("edition")}
-                    value={form.edition}
-                    placeholder="مثلاً: دوم"
-                    onChange={(e) => setField("edition", e.target.value)}
-                  />
-                </Field>
-              </div>
+              {/* شابک به مرحله‌ی اول رفت؛ ویرایش حالا تنها در ردیف خودش است */}
+              <Field id="abw-edition" label="ویرایش" optional error={errors.edition}>
+                <input
+                  id="abw-edition"
+                  className={inputClass("edition")}
+                  value={form.edition}
+                  placeholder="مثلاً: دوم"
+                  onChange={(e) => setField("edition", e.target.value)}
+                />
+              </Field>
 
               <div className="abw-row">
                 <Field id="abw-language" label="زبان کتاب" error={errors.language}>
@@ -585,11 +873,19 @@ export default function AddBookWizard({ onBack }) {
                   </select>
                 </Field>
 
-                <Field id="abw-publisher" label="ناشر" optional error={errors.publisher}>
+                <Field
+                  id="abw-publisher"
+                  label="ناشر"
+                  optional
+                  locked={isLocked("publisher")}
+                  hint={isLocked("publisher") ? LOCKED_HINT : undefined}
+                  error={errors.publisher}
+                >
                   <input
                     id="abw-publisher"
-                    className={inputClass("publisher")}
+                    className={inputClass("publisher", isLocked("publisher") ? "abw-locked" : "")}
                     value={form.publisher}
+                    readOnly={isLocked("publisher")}
                     placeholder="نام ناشر همین نسخه"
                     onChange={(e) => setField("publisher", e.target.value)}
                   />
@@ -597,39 +893,47 @@ export default function AddBookWizard({ onBack }) {
               </div>
 
               <div className="abw-row">
-                <Field id="abw-page_count" label="تعداد صفحات" optional error={errors.page_count}>
+                <Field
+                  id="abw-page_count"
+                  label="تعداد صفحات"
+                  optional
+                  locked={isLocked("page_count")}
+                  hint={isLocked("page_count") ? LOCKED_HINT : undefined}
+                  error={errors.page_count}
+                >
                   <input
                     id="abw-page_count"
-                    className={inputClass("page_count", "abw-ltr")}
+                    className={inputClass("page_count", isLocked("page_count") ? "abw-ltr abw-locked" : "abw-ltr")}
                     inputMode="numeric"
                     value={form.page_count}
+                    readOnly={isLocked("page_count")}
                     placeholder="342"
                     onChange={(e) => setField("page_count", onlyDigits(e.target.value).slice(0, 5))}
                   />
                 </Field>
 
-                <Field id="abw-publication_year" label="سال انتشار" optional error={errors.publication_year}>
+                {/* hint روی Field است (نه روی input) تا زیر فیلد نمایش داده شود */}
+                <Field
+                  id="abw-publication_year"
+                  label="سال انتشار"
+                  optional
+                  hint={yearHint}
+                  error={errors.publication_year}
+                >
                   <input
                     id="abw-publication_year"
                     className={inputClass("publication_year", "abw-ltr")}
                     inputMode="numeric"
                     value={form.publication_year}
-                    // placeholder="2023"
-                    hint="شمسی یا میلادی، همان‌طور که در شناسنامه‌ی کتاب آمده."
                     onChange={(e) => setField("publication_year", onlyDigits(e.target.value).slice(0, 4))}
                   />
                 </Field>
               </div>
-
-              <div className="abw-notice">
-                <span aria-hidden="true">⚠️</span>
-                <span>شابک باید با شابک روی جلد یکی باشد.</span>
-              </div>
             </section>
           )}
 
-          {/* ---------- ۳. توضیحات و دسته‌بندی ---------- */}
-          {step === 2 && (
+          {/* ---------- ۴. توضیحات و دسته‌بندی ---------- */}
+          {step === 3 && (
             <section className="abw-section">
               <Field id="abw-description" label="توضیحات کتاب" optional error={errors.description}>
                 <textarea
@@ -669,11 +973,19 @@ export default function AddBookWizard({ onBack }) {
             </section>
           )}
 
-          {/* ---------- ۴. جلد و فایل‌ها ---------- */}
-          {step === 3 && (
+          {/* ---------- ۵. جلد و فایل‌ها ---------- */}
+          {step === 4 && (
             <section className="abw-section">
               <div className="abw-field">
                 <span className="abw-label">تصویر جلد</span>
+                {/* جلدی که Open Library پیدا کرد فقط نمایش داده می‌شود: input فایل را نمی‌شود
+                    با کد از روی یک آدرس پر کرد، و فایل باید از دستگاه خود کاربر انتخاب شود */}
+                {lookupResult?.cover_url && !form.cover && (
+                  <div className="abw-found-cover">
+                    <img src={lookupResult.cover_url} alt="جلد پیداشده" />
+                    <span>جلد پیداشده؛ برای استفاده، تصویر را خودتان بارگذاری کنید</span>
+                  </div>
+                )}
                 <label className={`abw-cover ${errors.cover ? "abw-invalid" : ""}`} htmlFor="abw-cover">
                   {coverPreview ? (
                     <img src={coverPreview} alt="پیش‌نمایش جلد کتاب" />
@@ -728,8 +1040,8 @@ export default function AddBookWizard({ onBack }) {
             </section>
           )}
 
-          {/* ---------- ۵. قیمت و ارسال ---------- */}
-          {step === 4 && (
+          {/* ---------- ۶. قیمت و ارسال ---------- */}
+          {step === 5 && (
             <section className="abw-section">
               <div className="abw-card">
                 <div className="abw-price-row">
@@ -752,7 +1064,7 @@ export default function AddBookWizard({ onBack }) {
                   <p className="abw-hint">
                     {Number(form.price) === 0
                       ? "این کتاب رایگان عرضه می‌شود."
-                      : `${Number(form.price).toLocaleString("fa-IR")} تومان`}
+                      : `${toFaNumber(form.price)} تومان`}
                   </p>
                 )}
                 {errors.price && (
@@ -963,6 +1275,63 @@ select.abw-input { height: 49px; }
 
 .abw-hint { margin: 6px 0 0; font-size: 13px; color: #6b7280; }
 .abw-error { margin: 6px 0 0; font-size: 13px; color: #b42318; }
+
+/* دریافت اطلاعات از روی شابک */
+.abw-isbn-row { display: flex; gap: 8px; align-items: stretch; }
+.abw-isbn-row .abw-input { flex: 1; min-width: 0; }
+.abw-lookup {
+  display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
+  padding: 0 14px; border: 1px solid #2563eb; border-radius: 8px;
+  background: #eef3ff; color: #1d4ed8;
+  font: inherit; font-size: 14px; font-weight: 600; white-space: nowrap; cursor: pointer;
+}
+.abw-lookup:hover { background: #dbe6fe; }
+.abw-lookup:disabled { border-color: #c9cdd4; background: #f4f5f7; color: #9aa0aa; cursor: default; }
+.abw-lookup:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+.abw-spinner {
+  width: 14px; height: 14px; border-radius: 50%;
+  border: 2px solid currentColor; border-top-color: transparent;
+  animation: abw-spin 0.8s linear infinite;
+}
+@keyframes abw-spin { to { transform: rotate(360deg); } }
+.abw-lookup-msg { margin: -8px 0 16px; font-size: 13px; }
+.abw-lookup-success { color: #067647; }
+.abw-lookup-warn { color: #b54708; }
+.abw-found {
+  display: flex; gap: 12px; margin-bottom: 16px; padding: 12px;
+  background: #fff; border: 1px solid #dee1e6; border-radius: 12px;
+}
+.abw-found img, .abw-found-ph {
+  width: 64px; height: 96px; flex-shrink: 0; border-radius: 6px;
+  object-fit: cover; background: #e9ebef;
+}
+.abw-found-ph { display: grid; place-items: center; font-size: 24px; }
+.abw-found-body { min-width: 0; font-size: 14px; }
+.abw-found-body p { margin: 0; }
+.abw-found-title { font-weight: 700; }
+.abw-found dl { margin: 4px 0 0; font-size: 13px; color: #6b7280; }
+.abw-found dl div { display: flex; gap: 4px; }
+.abw-found dd { margin: 0; }
+.abw-found-cover {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding: 8px 10px;
+  background: #eef3ff; border: 1px solid #c3d4fb; border-radius: 8px;
+  font-size: 13px; color: #1e3a8a;
+}
+.abw-found-cover img { width: 40px; height: 60px; flex-shrink: 0; border-radius: 4px; object-fit: cover; }
+
+/* فیلدهای قفل‌شده (از Open Library) */
+.abw .abw-locked { background: #f4f5f7; color: #374151; cursor: default; }
+.abw-chip-locked { padding-inline: 10px; }
+.abw-source {
+  margin-inline-start: 6px; padding: 0 8px; border-radius: 999px;
+  background: #eef3ff; color: #1d4ed8; font-size: 11px; font-weight: 600;
+}
+.abw-discard {
+  display: block; margin: -4px 0 16px; padding: 4px 0;
+  border: 0; background: none; color: #2563eb;
+  font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; text-decoration: underline;
+}
+.abw-discard:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
 
 /* ورودی چندمقداری */
 .abw-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 7px 10px; cursor: text; }

@@ -1,5 +1,5 @@
 import React from 'react'
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import './index.css';
 import Navbar from './components/Navbar';
 import BottomNavbar from './components/BottomNavbar';
@@ -9,7 +9,10 @@ import LoginPage from './components/Login';
 import SignupPage from './components/Signup';
 import ListUsers from './components/ListUsers';
 import AddBookWizard from './components/AddBookWizard';
+import RequestByIsbnPage from './components/RequestByIsbnPage';
+import BookDetailPage from './components/BookDetailPage';
 import ProtectedRoute from './components/ProtectedRoute';
+import useGoBack from './hooks/useGoBack';
 
 // صفحه اصلی با نوار بالا/پایین و فوتر
 const Home = () => {
@@ -25,15 +28,15 @@ const Home = () => {
   )
 }
 
-// دکمه‌ی بازگشت فرم: به صفحه‌ی قبلی برمی‌گردد. اگر کاربر مستقیم با آدرس آمده باشد
-// و صفحه‌ی قبلی در سایت نداشته باشد (idx === 0)، به صفحه‌ی اصلی می‌رود.
+// useGoBack (src/hooks) دکمه‌ی بازگشت صفحه‌های داخلی را می‌سازد
 const AddBookPage = () => {
-  const navigate = useNavigate();
-  const goBack = () => {
-    if (window.history.state?.idx > 0) navigate(-1);
-    else navigate('/');
-  };
+  const goBack = useGoBack();
   return <AddBookWizard onBack={goBack} />;
+}
+
+const RequestByIsbnRoute = () => {
+  const goBack = useGoBack();
+  return <RequestByIsbnPage onBack={goBack} />;
 }
 
 const App = () => {
@@ -49,6 +52,18 @@ const App = () => {
         element={
           <ProtectedRoute>
             <AddBookPage />
+          </ProtectedRoute>
+        }
+      />
+      {/* صفحه‌ی یک کتاب؛ عمومی. React Router مسیر ثابت /books/new را بر :id مقدم می‌داند،
+          پس این دو با هم قاطی نمی‌شوند. */}
+      <Route path="/books/:id" element={<BookDetailPage />} />
+      {/* جستجوی شابک فقط برای کاربر واردشده است، پس صفحه هم محافظت‌شده است */}
+      <Route
+        path="/requests/new"
+        element={
+          <ProtectedRoute>
+            <RequestByIsbnRoute />
           </ProtectedRoute>
         }
       />

@@ -1,42 +1,72 @@
-import React from 'react';
-import { LuShoppingCart } from 'react-icons/lu';
+import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { LuBookOpen, LuShoppingCart } from 'react-icons/lu';
+import { formatPrice } from '../utils/format';
 
-const BookCard = ({ title, author, price, rating, image, badge }) => {
+//   id:    شناسه‌ی کتاب؛ کلیک روی کارت به /books/:id می‌رود
+//   image: آدرس کامل جلد یا null
+//   badge: نام دسته‌بندی یا null (اگر null باشد، badge نمایش داده نمی‌شود)
+//
+// کلیک روی کارت: عنوان یک Link واقعی است و با after:absolute after:inset-0 ناحیه‌ی کلیکش
+// روی کل کارت کشیده می‌شود (کارت relative است). دکمه‌ی سبد خرید با relative z-10 یک لایه
+// بالاتر از آن ناحیه است، پس کلیک روی دکمه به لینک نمی‌رسد و صفحه عوض نمی‌شود.
+// دکمه داخل <a> گذاشته نشده چون عنصر تعاملی داخل لینک در HTML مجاز نیست.
+const BookCard = ({ id, title, author, price, image, badge }) => {
+  // اگر آدرس جلد باشد ولی تصویر لود نشود (فایل پاک شده و ...)، همان جای‌خالی را نشان می‌دهیم
+  const [imageFailed, setImageFailed] = useState(false);
+  const showImage = image && !imageFailed;
+
   return (
-    <div className="w-64 bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow duration-300">
+    <div className="relative w-64 bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow duration-300">
       {/* Book Cover Image */}
       <div className="relative h-80 bg-gray-200">
-        <img
-          src={image}
-          alt="Book cover"
-          className="w-full h-full object-cover"
-        />
-        {/* Rating Badge */}
-        <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-lg text-sm font-semibold text-gray-800 shadow-md flex items-center gap-1">
-          <span>⭐</span>
-          <span>{rating}</span>
-        </div>
-        <div className="absolute top-3 left-3 bg-blue-600 backdrop-blur-sm px-2 py-1 rounded-lg text-sm font-semibold text-white shadow-md flex items-center gap-1">
-          <span>{badge}</span>
-        </div>
+        {showImage ? (
+          <img
+            src={image}
+            alt={title}
+            className="w-full h-full object-cover"
+            onError={() => setImageFailed(true)}
+          />
+        ) : (
+          // جای‌خالی خنثی برای کتاب بدون جلد
+          <div className="w-full h-full flex items-center justify-center text-gray-400" aria-hidden="true">
+            <LuBookOpen className="w-16 h-16" />
+          </div>
+        )}
+        {badge && (
+          <div className="absolute top-3 left-3 bg-blue-600 backdrop-blur-sm px-2 py-1 rounded-lg text-sm font-semibold text-white shadow-md flex items-center gap-1">
+            <span>{badge}</span>
+          </div>
+        )}
       </div>
 
       {/* Book Details */}
       <div className="p-4">
-        {/* Title */}
-        <h3 className="text-lg font-bold text-gray-900 mb-1 line-clamp-2">
-          {title}
+        {/* Title — dir="auto" تا عنوان انگلیسی در کارت راست‌چین درست نمایش داده شود */}
+        <h3 dir="auto" className="text-lg font-bold text-gray-900 mb-1 line-clamp-2">
+          <Link
+            to={`/books/${id}`}
+            className="after:absolute after:inset-0 focus:outline-none focus-visible:underline"
+          >
+            {title}
+          </Link>
         </h3>
 
         {/* Author */}
-        <p className="text-sm text-gray-600 mb-2">
+        <p dir="auto" className="text-sm text-gray-600 mb-2">
           {author}
         </p>
-        
+
         {/* Price */}
         <div className="flex items-center justify-between">
-          <span className="text-xl font-bold text-gray-900">{price}</span>
-          <button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-full text-sm font-medium transition-colors duration-200">
+          <span className="text-xl font-bold text-gray-900">{formatPrice(price)}</span>
+          {/* relative z-10: بالای ناحیه‌ی کلیک کارت، تا کلیک روی دکمه صفحه را عوض نکند.
+              عملکرد سبد خرید روز ۱۵ اضافه می‌شود. */}
+          <button
+            type="button"
+            aria-label="افزودن به سبد خرید"
+            className="relative z-10 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-full text-sm font-medium transition-colors duration-200"
+          >
             <LuShoppingCart className='text-2xl' />
           </button>
         </div>
