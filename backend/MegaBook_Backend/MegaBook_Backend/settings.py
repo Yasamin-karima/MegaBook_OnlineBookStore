@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     'accounts',
     'api',
     'catalog',
+    'book_requests',
 
     
 ]

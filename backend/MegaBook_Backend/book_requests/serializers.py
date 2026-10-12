@@ -1,0 +1,35 @@
+from rest_framework import serializers
+
+from catalog.isbn import ISBN_EMPTY, InvalidISBN, normalize_isbn
+from catalog.serializers import messages
+
+NOTES_MAX = 500  # همان NOTE_MAX صفحه‌ی درخواست
+
+
+class BookRequestCreateSerializer(serializers.Serializer):
+    """فقط اعتبارسنجی ورودی. قانون‌های کسب‌وکار (موجود بودن، رد شده، تکراری) در services.py است.
+
+    requester و status اینجا فیلد نیستند، پس اگر کلاینت آن‌ها را بفرستد نادیده گرفته می‌شوند:
+    درخواست‌کننده همیشه request.user است و وضعیت همیشه با open شروع می‌شود.
+    """
+    isbn = serializers.CharField(error_messages=messages(required=ISBN_EMPTY, blank=ISBN_EMPTY))
+    title = serializers.CharField(
+        max_length=300,
+        error_messages=messages(required="عنوان کتاب را وارد کنید.", blank="عنوان کتاب را وارد کنید."),
+    )
+    authors = serializers.CharField(max_length=500, required=False, allow_blank=True, error_messages=messages())
+    cover_url = serializers.URLField(
+        max_length=500, required=False, allow_blank=True,
+        error_messages=messages(invalid="آدرس تصویر جلد معتبر نیست."),
+    )
+    notes = serializers.CharField(
+        max_length=NOTES_MAX, required=False, allow_blank=True,
+        error_messages=messages(max_length="توضیحات حداکثر ۵۰۰ کاراکتر است."),
+    )
+
+    def validate_isbn(self, value):
+        # همان منطق شابک کل پروژه: خط تیره، رقم فارسی و ISBN-10 قبول است؛ خروجی ۱۳ رقمی
+        try:
+            return normalize_isbn(value)
+        except InvalidISBN as error:
+            raise serializers.ValidationError(str(error))
