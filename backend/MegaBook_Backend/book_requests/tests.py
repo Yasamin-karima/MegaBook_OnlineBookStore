@@ -99,12 +99,26 @@ class BookRequestApiTests(APITestCase):
         self.assertEqual(BookRequest.objects.count(), 0)
         self.assertEqual(RequestEntry.objects.count(), 0)
 
-    def test_pending_book_does_not_count_as_available(self):
+    def test_pending_book_returns_in_review_and_creates_nothing(self):
         Book.objects.create(
             title="x", isbn=ISBN, price=0, status=Book.Status.PENDING,
             uploaded_by=self.sara, book_file="books/files/x.pdf",
         )
-        self.assertEqual(self.post(self.ali).status_code, status.HTTP_201_CREATED)
+        res = self.post(self.ali)
+        self.assertEqual(res.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(res.data["result"], "in_review")
+        self.assertEqual(res.data["message"], "این کتاب بارگذاری شده و در انتظار بررسی است.")
+        self.assertEqual(BookRequest.objects.count(), 0)
+
+    def test_rejected_book_does_not_block_request(self):
+        # کتاب رد شده دوباره قابل بارگذاری است، پس درخواستش هم معنا دارد
+        Book.objects.create(
+            title="x", isbn=ISBN, price=0, status=Book.Status.REJECTED,
+            uploaded_by=self.sara, book_file="books/files/x.pdf",
+        )
+        res = self.post(self.ali)
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res.data["result"], "requested")
 
     def test_fulfilled_request_accepts_new_entry(self):
         self.post(self.sara)

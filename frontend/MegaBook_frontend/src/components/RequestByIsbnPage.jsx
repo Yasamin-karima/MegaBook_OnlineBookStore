@@ -60,7 +60,8 @@ export default function RequestByIsbnPage({ onBack }) {
   //   fallback  404 یا 502: پیدا نشد یا منبع در دسترس نبود؛ کاربر دستی وارد می‌کند
   //   error     جواب نیامد (بک‌اند خاموش، قطع شبکه) یا خطای دیگر
   const [lookupStatus, setLookupStatus] = useState("idle");
-  // در found: جواب کامل API. در fallback: { isbn, already_exists, message, httpStatus }
+  // در found: جواب کامل API. در fallback: { isbn, already_exists, existing_status, book_id, message, httpStatus }
+  // already_exists فقط برای کتاب تایید شده یا در انتظار درست است (نه رد شده)
   const [result, setResult] = useState(null);
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -157,6 +158,8 @@ export default function RequestByIsbnPage({ onBack }) {
         setResult({
           isbn: data.isbn,
           already_exists: data.already_exists,
+          existing_status: data.existing_status,
+          book_id: data.book_id,
           message: data.detail,
           httpStatus: status,
         });
@@ -213,6 +216,9 @@ export default function RequestByIsbnPage({ onBack }) {
         setSubmitNotice({ tone: "amber", icon: "📌", message: data.message });
       } else if (status === 409 && data?.result === "rejected") {
         setSubmitNotice({ tone: "red", icon: "⛔", message: data.message, reason: data.rejection_reason });
+      } else if (status === 409 && data?.result === "in_review") {
+        // کتاب بعد از جستجو بارگذاری شده و در انتظار بررسی است
+        setSubmitNotice({ tone: "amber", icon: "⏳", message: data.message });
       } else if (status === 409 && data?.result === "available") {
         setSubmitNotice({ tone: "green", icon: "📗", message: data.message, bookId: data.book_id });
       } else if (status === 400 && data && typeof data === "object") {
@@ -337,10 +343,22 @@ export default function RequestByIsbnPage({ onBack }) {
           )}
 
           <div className="space-y-4">
-            {/* کتاب در دیتابیس ما هست (در هر وضعیتی) ← درخواست جدید لازم نیست */}
-            {alreadyExists && (
+            {/* کتاب در مگابوک هست ← درخواست لازم نیست. کتاب «رد شده» اینجا حساب نمی‌شود
+                (already_exists برایش false است) چون دوباره قابل بارگذاری است و درخواستش معنا دارد. */}
+            {alreadyExists && result.existing_status === "pending" && (
+              <Notice tone="amber" icon="⏳">
+                <p className="font-semibold">این کتاب بارگذاری شده و در انتظار بررسی است</p>
+                <p className="mt-1">بعد از تایید مدیر در فروشگاه نمایش داده می‌شود؛ درخواست لازم نیست.</p>
+              </Notice>
+            )}
+            {alreadyExists && result.existing_status !== "pending" && (
               <Notice tone="green" icon="📗">
-                <p className="font-semibold">این کتاب در مگابوک ثبت شده است</p>
+                <p className="font-semibold">این کتاب همین حالا در فروشگاه مگابوک موجود است</p>
+                {result.book_id && (
+                  <Link to={`/books/${result.book_id}`} className="mt-2 inline-block font-semibold underline underline-offset-4">
+                    رفتن به صفحه‌ی کتاب
+                  </Link>
+                )}
               </Notice>
             )}
 

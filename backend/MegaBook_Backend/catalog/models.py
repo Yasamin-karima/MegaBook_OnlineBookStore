@@ -4,6 +4,10 @@ from django.db import models
 
 pdf_only = FileExtensionValidator(allowed_extensions=["pdf"])
 
+# پیام‌های «این شابک در مگابوک هست»، مشترک بین ساخت کتاب، جستجوی شابک و ثبت درخواست
+BOOK_EXISTS_APPROVED = "کتابی با این شابک قبلاً ثبت شده است."
+BOOK_EXISTS_PENDING = "این کتاب بارگذاری شده و در انتظار بررسی است."
+
 
 class Person(models.Model):
     # نویسنده یا مترجم. یک جدول برای هر دو، چون یک نفر می‌تواند هر دو نقش را داشته باشد.
@@ -48,8 +52,10 @@ class Book(models.Model):
     # --- هویت کتاب ---
     title = models.CharField(max_length=300)
     original_title = models.CharField(max_length=300, blank=True)
-    # سیزده رقم، بدون خط تیره
-    isbn = models.CharField(max_length=13, unique=True)
+    # سیزده رقم، بدون خط تیره. یکتا فقط بین کتاب‌های «رد نشده» (قید پایین در Meta):
+    # کتاب رد شده (مثلاً به خاطر قیمت یا فایل نامناسب) دوباره قابل بارگذاری است و
+    # ردیف رد شده به‌عنوان سابقه می‌ماند. db_index برای جستجوی سریع با شابک.
+    isbn = models.CharField(max_length=13, db_index=True)
 
     # --- افراد و نشر ---
     authors = models.ManyToManyField(Person, related_name="authored_books")
@@ -107,9 +113,29 @@ class Book(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        constraints = [
+            # برای هر شابک حداکثر یک کتاب «در انتظار تایید» یا «تایید شده»؛ تعداد کتاب‌های رد شده آزاد است.
+            # در PostgreSQL یک unique index جزئی (partial) می‌شود.
+            models.UniqueConstraint(
+                fields=["isbn"],
+                condition=~models.Q(status="rejected"),
+                name="unique_isbn_unless_rejected",
+                violation_error_message="کتاب دیگری با این شابک در مگابوک هست (تایید شده یا در انتظار بررسی).",
+            ),
+        ]
 
     def __str__(self):
         return self.title
+
+    @classmethod
+    def active_for_isbn(cls, isbn):
+        """کتاب «رد نشده» (تایید شده یا در انتظار تایید) با این شابک، یا None.
+
+        به خاطر قید unique_isbn_unless_rejected حداکثر یکی وجود دارد. کتاب رد شده حساب نمی‌شود،
+        چون جلوی بارگذاری دوباره یا درخواست را نمی‌گیرد. ساخت کتاب، جستجوی شابک و ثبت درخواست
+        همه از همین استفاده می‌کنند تا «این کتاب در مگابوک هست؟» همه‌جا یک معنا داشته باشد.
+        """
+        return cls.objects.exclude(status=cls.Status.REJECTED).filter(isbn=isbn).only("id", "status").first()
 
     @property
     def file_size(self):

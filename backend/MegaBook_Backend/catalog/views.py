@@ -105,24 +105,33 @@ class IsbnLookupView(APIView):
             # همان شکل خطای فرم ساخت کتاب، تا فرم پیام را زیر فیلد شابک نشان دهد
             return Response({"isbn": [str(error)]}, status=status.HTTP_400_BAD_REQUEST)
 
-        # در هر وضعیتی (pending، rejected، ...)؛ فرم می‌تواند قبل از ارسال هشدار تکراری بودن بدهد
-        already_exists = Book.objects.filter(isbn=isbn).exists()
+        # وضعیت این شابک در مگابوک؛ در هر سه جواب (200، 404، 502) برمی‌گردد:
+        #   already_exists   کتاب «رد نشده» هست، پس نمی‌شود دوباره بارگذاری‌اش کرد
+        #   existing_status  "approved" | "pending" | null؛ کتاب رد شده null حساب می‌شود
+        #                    چون جلوی بارگذاری دوباره یا درخواست را نمی‌گیرد
+        #   book_id          فقط برای کتاب تایید شده (برای لینک به صفحه‌ی کتاب)؛ وگرنه null
+        existing = Book.active_for_isbn(isbn)
+        in_megabook = {
+            "already_exists": existing is not None,
+            "existing_status": existing.status if existing else None,
+            "book_id": existing.id if existing and existing.status == Book.Status.APPROVED else None,
+        }
 
         try:
             metadata = lookup_isbn(isbn)
         except SourceUnavailable:
             return Response(
-                {"detail": LOOKUP_UNAVAILABLE, "isbn": isbn, "already_exists": already_exists},
+                {"detail": LOOKUP_UNAVAILABLE, "isbn": isbn, **in_megabook},
                 status=status.HTTP_502_BAD_GATEWAY,
             )
 
         if metadata is None:
             return Response(
-                {"detail": LOOKUP_NOT_FOUND, "isbn": isbn, "already_exists": already_exists},
+                {"detail": LOOKUP_NOT_FOUND, "isbn": isbn, **in_megabook},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        return Response({"isbn": isbn, **metadata, "already_exists": already_exists})
+        return Response({"isbn": isbn, **metadata, **in_megabook})
 
 
 class CategoryListView(generics.ListAPIView):

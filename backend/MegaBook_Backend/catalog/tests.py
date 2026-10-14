@@ -5,9 +5,10 @@ from unittest import mock
 
 import requests
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.db import connection
-from django.test import override_settings
+from django.db import IntegrityError, connection, transaction
+from django.test import TestCase, override_settings
 from django.test.utils import CaptureQueriesContext
 from PIL import Image
 from rest_framework import status
@@ -15,7 +16,7 @@ from rest_framework.test import APITestCase
 
 from .isbn import ISBN_EMPTY, ISBN_FORMAT, InvalidISBN, normalize_isbn
 from .models import Book, Category, Person, Publisher, Tag
-from .serializers import ISBN_CHECKSUM, ISBN_LENGTH, ISBN_TAKEN
+from .serializers import ISBN_CHECKSUM, ISBN_IN_REVIEW, ISBN_LENGTH, ISBN_TAKEN
 
 # فایل‌های آپلودی تست در یک پوشه‌ی موقت ذخیره می‌شوند، نه در media/ واقعی
 TEMP_MEDIA = tempfile.mkdtemp()
@@ -131,12 +132,31 @@ class BookCreateTests(APITestCase):
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(res.data["isbn"], [ISBN_CHECKSUM])
 
-    def test_isbn_already_used(self):
+    def test_isbn_of_pending_book_is_refused_with_in_review_message(self):
+        self.post()  # کتاب اول در انتظار تایید است
+        res = self.post(cover=png_file(), book_file=pdf_file())
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(res.data["isbn"], [ISBN_IN_REVIEW])
+        self.assertEqual(Book.objects.count(), 1)
+
+    def test_isbn_of_approved_book_is_refused(self):
         self.post()
+        Book.objects.update(status=Book.Status.APPROVED)
         res = self.post(cover=png_file(), book_file=pdf_file())
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(res.data["isbn"], [ISBN_TAKEN])
         self.assertEqual(Book.objects.count(), 1)
+
+    def test_rejected_book_can_be_uploaded_again(self):
+        self.post()
+        Book.objects.update(status=Book.Status.REJECTED)
+        res = self.post(cover=png_file(), book_file=pdf_file(), price="90000")
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED, res.data)
+        # ردیف رد شده به‌عنوان سابقه می‌ماند؛ نسخه‌ی جدید در انتظار تایید است
+        self.assertEqual(
+            sorted(Book.objects.filter(isbn=VALID_ISBN).values_list("status", flat=True)),
+            ["pending", "rejected"],
+        )
 
     def test_missing_required_fields_give_persian_errors(self):
         res = self.client.post(self.url, {}, format="multipart")
@@ -472,6 +492,8 @@ class IsbnLookupTests(APITestCase):
             "cover_url": "https://covers.openlibrary.org/b/id/1-L.jpg",
             "subjects": ["Persian fiction", "Fiction"],
             "already_exists": False,
+            "existing_status": None,
+            "book_id": None,
         })
         # درخواست بیرونی حتماً timeout دارد و هر دو شکل شابک را می‌پرسد
         _, kwargs = fake_get.call_args
@@ -500,14 +522,46 @@ class IsbnLookupTests(APITestCase):
         # اولین عدد چهاررقمی، هر قالبی که تاریخ داشته باشد
         self.assertEqual(res.data["publication_year"], 1368)
 
-    @mock.patch(PATCH_TARGET)
-    def test_already_exists(self, fake_get):
-        fake_get.return_value = fake_response(OPEN_LIBRARY_HIT)
-        Book.objects.create(
-            title="x", isbn="9789643113445", price=0, status=Book.Status.REJECTED,
-            uploaded_by=self.user, book_file=pdf_file(),
+    def make_existing(self, book_status):
+        return Book.objects.create(
+            title="x", isbn="9789643113445", price=0, status=book_status,
+            uploaded_by=self.user, book_file="books/files/x.pdf",
         )
-        self.assertTrue(self.lookup("9789643113445").data["already_exists"])
+
+    @mock.patch(PATCH_TARGET)
+    def test_existing_approved_book(self, fake_get):
+        fake_get.return_value = fake_response(OPEN_LIBRARY_HIT)
+        book = self.make_existing(Book.Status.APPROVED)
+        data = self.lookup("9789643113445").data
+        self.assertTrue(data["already_exists"])
+        self.assertEqual(data["existing_status"], "approved")
+        self.assertEqual(data["book_id"], book.id)
+
+    @mock.patch(PATCH_TARGET)
+    def test_existing_pending_book_has_no_book_id(self, fake_get):
+        fake_get.return_value = fake_response(OPEN_LIBRARY_HIT)
+        self.make_existing(Book.Status.PENDING)
+        data = self.lookup("9789643113445").data
+        self.assertTrue(data["already_exists"])
+        self.assertEqual(data["existing_status"], "pending")
+        # صفحه‌ی کتاب در انتظار عمومی نیست، پس لینکی هم نیست
+        self.assertIsNone(data["book_id"])
+
+    @mock.patch(PATCH_TARGET)
+    def test_rejected_book_does_not_count_as_existing(self, fake_get):
+        fake_get.return_value = fake_response(OPEN_LIBRARY_HIT)
+        self.make_existing(Book.Status.REJECTED)
+        data = self.lookup("9789643113445").data
+        self.assertFalse(data["already_exists"])
+        self.assertIsNone(data["existing_status"])
+
+    @mock.patch(PATCH_TARGET)
+    def test_existing_status_also_on_404(self, fake_get):
+        fake_get.return_value = fake_response({})
+        self.make_existing(Book.Status.PENDING)
+        res = self.lookup("9789643113445")
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(res.data["existing_status"], "pending")
 
     @mock.patch(PATCH_TARGET)
     def test_unknown_isbn_is_404(self, fake_get):
@@ -553,3 +607,48 @@ class IsbnLookupTests(APITestCase):
         self.client.force_authenticate(None)
         self.assertEqual(self.lookup("9789643113445").status_code, status.HTTP_401_UNAUTHORIZED)
         fake_get.assert_not_called()
+
+
+class BookIsbnConstraintTests(TestCase):
+    """قید unique_isbn_unless_rejected در خود دیتابیس، بدون کمک serializer."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="u", email="u@example.com", password="Str0ng-Passw0rd!"
+        )
+
+    def book(self, book_status, **extra):
+        return Book(
+            title="x", isbn=VALID_ISBN, price=0, status=book_status,
+            uploaded_by=self.user, book_file="books/files/x.pdf", **extra,
+        )
+
+    def test_two_active_books_with_same_isbn_are_refused(self):
+        self.book(Book.Status.PENDING).save()
+        for second in (Book.Status.PENDING, Book.Status.APPROVED):
+            with self.assertRaises(IntegrityError), transaction.atomic():
+                self.book(second).save()
+
+    def test_rejected_books_do_not_count(self):
+        self.book(Book.Status.REJECTED).save()
+        self.book(Book.Status.REJECTED).save()
+        self.book(Book.Status.PENDING).save()  # نسخه‌ی تازه بعد از دو بار رد شدن
+        self.assertEqual(Book.objects.filter(isbn=VALID_ISBN).count(), 3)
+
+    def test_full_clean_reports_conflict_like_admin_form(self):
+        # فرم ادمین full_clean را صدا می‌زند و جنگو قید شرطی را هم بررسی می‌کند؛
+        # پس برگرداندن یک کتاب رد شده به «در انتظار» وقتی نسخه‌ی دیگری هست، خطای فرم می‌دهد نه 500
+        self.book(Book.Status.PENDING).save()
+        old = self.book(Book.Status.REJECTED)
+        old.save()
+        old.status = Book.Status.PENDING
+        with self.assertRaises(ValidationError) as ctx:
+            old.full_clean()
+        self.assertIn("در مگابوک هست", str(ctx.exception))
+
+    def test_active_for_isbn_ignores_rejected(self):
+        self.book(Book.Status.REJECTED).save()
+        self.assertIsNone(Book.active_for_isbn(VALID_ISBN))
+        pending = self.book(Book.Status.PENDING)
+        pending.save()
+        self.assertEqual(Book.active_for_isbn(VALID_ISBN), pending)

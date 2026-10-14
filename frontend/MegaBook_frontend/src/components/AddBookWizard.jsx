@@ -10,7 +10,14 @@ import { LANGUAGES, formatFileSize, languageName, toFaNumber, toFaYear } from ".
 // (از طریق GET /catalog/isbn-lookup/) بگیرد تا فیلدهای خالی پر شوند، و بعد در مرحله‌های
 // بعدی همه را بررسی و اصلاح کند. دریافت اطلاعات اختیاری است؛ فرم دستی هم کامل کار می‌کند.
 
+// پیام «این شابک در مگابوک هست» بر اساس وضعیت کتاب موجود (existing_status جواب جستجو).
+// کتاب «رد شده» در جواب جستجو حساب نمی‌شود (already_exists=false) و دوباره قابل بارگذاری است.
 const ISBN_TAKEN = "این کتاب قبلاً در مگابوک ثبت شده است";
+const ISBN_IN_REVIEW = "این کتاب بارگذاری شده و در انتظار بررسی است";
+
+function takenMessage(data) {
+  return data.existing_status === "pending" ? ISBN_IN_REVIEW : ISBN_TAKEN;
+}
 
 const MAX_COVER_MB = 5;
 
@@ -73,14 +80,14 @@ function isCoverImage(file) {
 }
 
 // همه‌ی خطاهای فرم؛ validateStep فقط خطاهای یک مرحله را از این بیرون می‌کشد
-// isbnTaken: جستجوی شابک گفته این کتاب در مگابوک هست؛ تا شابک عوض نشود، نمی‌شود جلو رفت
+// isbnTaken: پیام «این کتاب در مگابوک هست» (یا رشته‌ی خالی)؛ تا شابک عوض نشود، نمی‌شود جلو رفت
 // (سرور هم شابک تکراری را رد می‌کند، بهتر است کاربر همین اول بفهمد نه بعد از پنج مرحله)
-function validateAll(form, accepted, isbnTaken = false) {
+function validateAll(form, accepted, isbnTaken = "") {
   const errors = {};
   if (!form.title.trim()) errors.title = "عنوان کتاب را وارد کنید.";
   if (form.authors.length === 0) errors.authors = "دست‌کم نام یک نویسنده را وارد کنید.";
   if (form.isbn.length !== 13) errors.isbn = "شابک باید ۱۳ رقم باشد.";
-  else if (isbnTaken) errors.isbn = ISBN_TAKEN;
+  else if (isbnTaken) errors.isbn = isbnTaken;
   if (!form.language) errors.language = "زبان کتاب را انتخاب کنید.";
   if (form.publication_year && form.publication_year.length !== 4) {
     errors.publication_year = "سال را چهاررقمی وارد کنید.";
@@ -92,7 +99,7 @@ function validateAll(form, accepted, isbnTaken = false) {
   return errors;
 }
 
-function validateStep(index, form, accepted, isbnTaken = false) {
+function validateStep(index, form, accepted, isbnTaken = "") {
   const all = validateAll(form, accepted, isbnTaken);
   const result = {};
   STEPS[index].fields.forEach((name) => {
@@ -389,7 +396,7 @@ export default function AddBookWizard({ onBack }) {
   // پیام زیر فیلد شابک که خطای فیلد نیست: { tone: "success" | "warn", text }
   const [lookupNotice, setLookupNotice] = useState(null);
   // جستجو گفته این کتاب در مگابوک هست؛ تا شابک عوض نشود جلو رفتن ممنوع است
-  const [isbnTaken, setIsbnTaken] = useState(false);
+  const [isbnTaken, setIsbnTaken] = useState("");
   // مقدارهایی که از Open Library آمد: { title: "…", authors: ["…"], … }
   // هر فیلدی که اینجا هست (جز سال) قفل است. با این می‌دانیم هنگام عوض شدن شابک چه چیزی را پاک کنیم.
   const [fetched, setFetched] = useState({});
@@ -451,7 +458,7 @@ export default function AddBookWizard({ onBack }) {
     setLookupLoading(false);
     setLookupResult(null);
     setLookupNotice(null);
-    setIsbnTaken(false);
+    setIsbnTaken("");
 
     if (hasFetched) {
       // روی آخرین نسخه‌ی فرم (prev) اعمال می‌شود
@@ -483,7 +490,7 @@ export default function AddBookWizard({ onBack }) {
     setLookupResult(null);
     setLookupNotice(null);
     setClearedNotice(false);
-    setIsbnTaken(false);
+    setIsbnTaken("");
     setError("isbn", undefined);
 
     try {
@@ -492,8 +499,8 @@ export default function AddBookWizard({ onBack }) {
 
       if (data.already_exists) {
         // کتاب در مگابوک هست: هیچ چیز پر نمی‌شود
-        setIsbnTaken(true);
-        setError("isbn", ISBN_TAKEN);
+        setIsbnTaken(takenMessage(data));
+        setError("isbn", takenMessage(data));
         return;
       }
 
@@ -522,8 +529,8 @@ export default function AddBookWizard({ onBack }) {
 
       if (data?.already_exists) {
         // 404 یا 502 هم already_exists دارند: کتاب در مگابوک هست، حتی اگر Open Library ندارد
-        setIsbnTaken(true);
-        setError("isbn", ISBN_TAKEN);
+        setIsbnTaken(takenMessage(data));
+        setError("isbn", takenMessage(data));
       } else if (status === 400 && data?.isbn) {
         // شابک نامعتبر (مثلاً رقم کنترلی): خطای خود فیلد
         setError("isbn", data.isbn[0]);
@@ -604,7 +611,7 @@ export default function AddBookWizard({ onBack }) {
     setLookupLoading(false);
     setLookupResult(null);
     setLookupNotice(null);
-    setIsbnTaken(false);
+    setIsbnTaken("");
     setFetched({});
     setClearedNotice(false);
   };

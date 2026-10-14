@@ -14,6 +14,7 @@ from .models import BookRequest, RequestEntry
 # مقدار فیلد result در پاسخ API؛ فرانت روی این‌ها شاخه می‌زند
 REQUESTED = "requested"
 AVAILABLE = "available"
+IN_REVIEW = "in_review"
 REJECTED = "rejected"
 ALREADY_REQUESTED = "already_requested"
 
@@ -29,17 +30,22 @@ def submit_request(user, *, isbn, title, authors="", cover_url="", notes=""):
     """درخواست کاربر برای یک شابک (۱۳ رقمیِ معتبر). همه‌چیز در یک تراکنش.
 
     ترتیب بررسی:
-      ۱. کتاب تاییدشده با این شابک هست      -> AVAILABLE، چیزی ساخته نمی‌شود
-      ۲. درخواست این شابک رد شده است        -> REJECTED، چیزی ساخته نمی‌شود
-      ۳. همین کاربر قبلاً درخواست داده       -> ALREADY_REQUESTED، چیزی ساخته نمی‌شود
-      ۴. درخواست باز یا تامین‌شده هست       -> فقط RequestEntry این کاربر اضافه می‌شود
-      ۵. درخواستی نیست                      -> BookRequest و RequestEntry ساخته می‌شوند
-    ۴ و ۵ هر دو REQUESTED برمی‌گردانند تا معلوم نشود کس دیگری قبلاً درخواست داده یا نه.
+      ۱. کتاب تاییدشده با این شابک هست        -> AVAILABLE، چیزی ساخته نمی‌شود
+      ۲. کتاب با این شابک در انتظار بررسی است -> IN_REVIEW، چیزی ساخته نمی‌شود
+         (کتاب در راه است؛ درخواست فقط کار اضافه برای مدیر است)
+      ۳. درخواست این شابک رد شده است          -> REJECTED، چیزی ساخته نمی‌شود
+      ۴. همین کاربر قبلاً درخواست داده         -> ALREADY_REQUESTED، چیزی ساخته نمی‌شود
+      ۵. درخواست باز یا تامین‌شده هست         -> فقط RequestEntry این کاربر اضافه می‌شود
+      ۶. درخواستی نیست                        -> BookRequest و RequestEntry ساخته می‌شوند
+    ۵ و ۶ هر دو REQUESTED برمی‌گردانند تا معلوم نشود کس دیگری قبلاً درخواست داده یا نه.
+    کتاب «رد شده» جلوی درخواست را نمی‌گیرد، چون دوباره قابل بارگذاری است (catalog.Book).
     """
     with transaction.atomic():
-        book = Book.objects.filter(isbn=isbn, status=Book.Status.APPROVED).only("id").first()
-        if book:
+        book = Book.active_for_isbn(isbn)
+        if book and book.status == Book.Status.APPROVED:
             return SubmitOutcome(AVAILABLE, book_id=book.id)
+        if book and book.status == Book.Status.PENDING:
+            return SubmitOutcome(IN_REVIEW)
 
         # get_or_create: اگر دو کاربر هم‌زمان یک شابک جدید بفرستند، هر دو سعی می‌کنند INSERT کنند.
         # قید unique روی isbn دومی را رد می‌کند (IntegrityError)؛ خود get_or_create این خطا را

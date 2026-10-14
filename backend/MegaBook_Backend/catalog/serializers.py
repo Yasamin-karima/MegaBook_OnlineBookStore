@@ -2,7 +2,7 @@ from django.db import IntegrityError, transaction
 from rest_framework import serializers
 
 from .isbn import ISBN_CHECKSUM, isbn13_is_valid
-from .models import Book, Category, Person, Publisher, Tag
+from .models import BOOK_EXISTS_APPROVED, BOOK_EXISTS_PENDING, Book, Category, Person, Publisher, Tag
 
 MAX_COVER_MB = 5
 
@@ -29,7 +29,18 @@ def messages(**overrides):
 
 
 ISBN_LENGTH = "شابک باید ۱۳ رقم باشد."
-ISBN_TAKEN = "کتابی با این شابک قبلاً ثبت شده است."
+ISBN_TAKEN = BOOK_EXISTS_APPROVED
+ISBN_IN_REVIEW = BOOK_EXISTS_PENDING
+
+
+def raise_if_isbn_taken(isbn):
+    """اگر کتاب تایید شده یا در انتظار با این شابک هست، با پیام مناسب همان وضعیت خطا می‌دهد."""
+    existing = Book.active_for_isbn(isbn)
+    if existing is None:
+        return
+    if existing.status == Book.Status.PENDING:
+        raise serializers.ValidationError(ISBN_IN_REVIEW)
+    raise serializers.ValidationError(ISBN_TAKEN)
 
 
 def is_pdf(file):
@@ -141,8 +152,8 @@ class BookCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(ISBN_LENGTH)
         if not isbn13_is_valid(isbn):
             raise serializers.ValidationError(ISBN_CHECKSUM)
-        if Book.objects.filter(isbn=isbn).exists():
-            raise serializers.ValidationError(ISBN_TAKEN)
+        # فقط کتاب «رد نشده» جلوی بارگذاری را می‌گیرد؛ کتاب رد شده دوباره قابل بارگذاری است
+        raise_if_isbn_taken(isbn)
         return isbn
 
     def _unique_names(self, names):
@@ -202,7 +213,10 @@ class BookCreateSerializer(serializers.ModelSerializer):
         except IntegrityError:
             # اگر دو نفر هم‌زمان همین شابک را بفرستند، چک validate_isbn هر دو را رد نمی‌کند؛
             # قید unique دیتابیس دومی را می‌گیرد و اینجا به پیام قابل‌فهم تبدیلش می‌کنیم
-            raise serializers.ValidationError({"isbn": [ISBN_TAKEN]})
+            # قید unique_isbn_unless_rejected دومی را رد کرد؛ پیام بر اساس وضعیت کتابی که برنده شد
+            existing = Book.active_for_isbn(validated_data["isbn"])
+            message = ISBN_IN_REVIEW if existing and existing.status == Book.Status.PENDING else ISBN_TAKEN
+            raise serializers.ValidationError({"isbn": [message]})
         return book
 
     def to_representation(self, instance):

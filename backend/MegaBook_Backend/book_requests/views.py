@@ -2,12 +2,15 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from catalog.models import BOOK_EXISTS_PENDING
+
 from . import services
 from .serializers import BookRequestCreateSerializer
 
 MESSAGES = {
     services.REQUESTED: "درخواست شما ثبت شد",
     services.AVAILABLE: "این کتاب همین حالا در فروشگاه مگابوک موجود است.",
+    services.IN_REVIEW: BOOK_EXISTS_PENDING,
     services.REJECTED: "درخواست این کتاب بررسی و رد شده است.",
     services.ALREADY_REQUESTED: "قبلاً این کتاب را درخواست داده‌اید",
 }
@@ -20,6 +23,7 @@ class BookRequestCreateView(APIView):
 
     201 requested           ثبت شد (چه درخواست تازه، چه پیوستن به درخواست موجود؛ عمداً یکسان)
     409 available           کتاب تاییدشده در فروشگاه هست (+ book_id)
+    409 in_review           کتاب بارگذاری شده و در انتظار بررسی است
     409 rejected            درخواست این شابک رد شده (+ rejection_reason)
     409 already_requested   همین کاربر قبلاً درخواست داده
     400                     ورودی نامعتبر: { field: ["پیام"] }
