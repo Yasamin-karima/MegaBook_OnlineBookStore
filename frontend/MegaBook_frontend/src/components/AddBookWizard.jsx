@@ -37,6 +37,8 @@ const EMPTY_FORM = {
   publication_year: "",
   edition: "",
   cover: null,
+  // آدرس جلدی که Open Library پیدا کرد؛ فقط وقتی فرستاده می‌شود که کاربر فایل جلد نداشته باشد
+  cover_url: "",
   sample_file: null,
   book_file: null,
   price: "",
@@ -92,7 +94,8 @@ function validateAll(form, accepted, isbnTaken = "") {
   if (form.publication_year && form.publication_year.length !== 4) {
     errors.publication_year = "سال را چهاررقمی وارد کنید.";
   }
-  if (!form.cover) errors.cover = "تصویر جلد را انتخاب کنید.";
+  // جلد: یا فایل خود کاربر، یا جلدی که Open Library پیدا کرد
+  if (!form.cover && !form.cover_url) errors.cover = "تصویر جلد را انتخاب کنید.";
   if (!form.book_file) errors.book_file = "فایل PDF کتاب را انتخاب کنید.";
   if (form.price === "") errors.price = "قیمت را وارد کنید. برای کتاب رایگان صفر بنویسید.";
   if (!accepted) errors.accepted = "برای ارسال، تایید مالکیت لازم است.";
@@ -115,6 +118,7 @@ const FIELD_NAMES = {
   publisher: "ناشر",
   page_count: "تعداد صفحات",
   publication_year: "سال انتشار",
+  cover_url: "جلد",
 };
 
 // سال انتشار پر می‌شود ولی قفل نمی‌شود: Open Library معمولاً سال میلادی دارد و کتاب فارسی
@@ -135,6 +139,8 @@ function lookupValues(data) {
   // همان محدودیت طولی که inputها دارند
   if (data.page_count) values.page_count = String(data.page_count).slice(0, 5);
   if (data.publication_year) values.publication_year = String(data.publication_year).slice(0, 4);
+  // جلد: بک‌اند هنگام ارسال آن را از Open Library دانلود می‌کند (اگر کاربر فایل خودش را نگذارد)
+  if (data.cover_url) values.cover_url = data.cover_url;
   return values;
 }
 
@@ -179,7 +185,9 @@ function buildFormData(form) {
     if (value) data.append(name, value);
   });
 
-  data.append("cover", form.cover);
+  // فایل خود کاربر برنده است؛ cover_url فقط وقتی فرستاده می‌شود که فایلی نیست
+  if (form.cover) data.append("cover", form.cover);
+  else if (form.cover_url) data.append("cover_url", form.cover_url);
   data.append("book_file", form.book_file);
   if (form.sample_file) data.append("sample_file", form.sample_file);
 
@@ -300,7 +308,7 @@ function PdfPicker({ id, file, invalid, onPick }) {
       ) : (
         <span className="abw-file-name abw-file-empty">انتخاب فایل PDF</span>
       )}
-      <input id={id} className="abw-sr-input" type="file" accept="application/pdf" onChange={onPick} />
+      <input id={id} className="abw-sr-input" type="file" accept=".pdf" onChange={onPick} />
     </label>
   );
 }
@@ -985,17 +993,18 @@ export default function AddBookWizard({ onBack }) {
             <section className="abw-section">
               <div className="abw-field">
                 <span className="abw-label">تصویر جلد</span>
-                {/* جلدی که Open Library پیدا کرد فقط نمایش داده می‌شود: input فایل را نمی‌شود
-                    با کد از روی یک آدرس پر کرد، و فایل باید از دستگاه خود کاربر انتخاب شود */}
-                {lookupResult?.cover_url && !form.cover && (
-                  <div className="abw-found-cover">
-                    <img src={lookupResult.cover_url} alt="جلد پیداشده" />
-                    <span>جلد پیداشده؛ برای استفاده، تصویر را خودتان بارگذاری کنید</span>
-                  </div>
-                )}
+                {/* سه حالت: فایل خود کاربر (برنده)، جلدی که Open Library پیدا کرد (بک‌اند هنگام
+                    ارسال دانلودش می‌کند)، یا هیچ‌کدام. انتخاب فایل همیشه جلد Open Library را کنار می‌گذارد. */}
                 <label className={`abw-cover ${errors.cover ? "abw-invalid" : ""}`} htmlFor="abw-cover">
                   {coverPreview ? (
                     <img src={coverPreview} alt="پیش‌نمایش جلد کتاب" />
+                  ) : form.cover_url ? (
+                    <img
+                      src={form.cover_url}
+                      alt="جلد کتاب از Open Library"
+                      // اگر مرورگر هم نتواند جلد را باز کند، به آن تکیه نمی‌کنیم و کاربر جلد را خودش انتخاب می‌کند
+                      onError={() => setField("cover_url", "")}
+                    />
                   ) : (
                     <>
                       <span className="abw-cover-icon" aria-hidden="true">
@@ -1009,11 +1018,14 @@ export default function AddBookWizard({ onBack }) {
                     id="abw-cover"
                     className="abw-sr-input"
                     type="file"
-                    accept="image/jpeg,image/png"
+                    accept=".jpg,.jpeg,.png"
                     onChange={pickCover}
                   />
                 </label>
                 {coverPreview && !errors.cover && <p className="abw-hint">برای تغییر تصویر، دوباره روی آن بزنید.</p>}
+                {!coverPreview && form.cover_url && !errors.cover && (
+                  <p className="abw-hint">جلد از Open Library استفاده می‌شود؛ برای تغییر، تصویر دیگری انتخاب کنید</p>
+                )}
                 {errors.cover && (
                   <p className="abw-error" role="alert">
                     {errors.cover}
@@ -1319,12 +1331,6 @@ select.abw-input { height: 49px; }
 .abw-found dl { margin: 4px 0 0; font-size: 13px; color: #6b7280; }
 .abw-found dl div { display: flex; gap: 4px; }
 .abw-found dd { margin: 0; }
-.abw-found-cover {
-  display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding: 8px 10px;
-  background: #eef3ff; border: 1px solid #c3d4fb; border-radius: 8px;
-  font-size: 13px; color: #1e3a8a;
-}
-.abw-found-cover img { width: 40px; height: 60px; flex-shrink: 0; border-radius: 4px; object-fit: cover; }
 
 /* فیلدهای قفل‌شده (از Open Library) */
 .abw .abw-locked { background: #f4f5f7; color: #374151; cursor: default; }

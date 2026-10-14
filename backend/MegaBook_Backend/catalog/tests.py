@@ -14,6 +14,7 @@ from PIL import Image
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from .book_sources import CoverDownloadError, download_cover
 from .isbn import ISBN_EMPTY, ISBN_FORMAT, InvalidISBN, normalize_isbn
 from .models import Book, Category, Person, Publisher, Tag
 from .serializers import ISBN_CHECKSUM, ISBN_IN_REVIEW, ISBN_LENGTH, ISBN_TAKEN
@@ -606,6 +607,192 @@ class IsbnLookupTests(APITestCase):
     def test_requires_login(self, fake_get):
         self.client.force_authenticate(None)
         self.assertEqual(self.lookup("9789643113445").status_code, status.HTTP_401_UNAUTHORIZED)
+        fake_get.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# دانلود جلد از Open Library (شبکه mock است؛ هیچ تستی چیزی دانلود نمی‌کند)
+# ---------------------------------------------------------------------------
+
+COVER_URL = "https://covers.openlibrary.org/b/id/14412247-L.jpg"
+ARCHIVE_URL = "https://ia800507.us.archive.org/view_archive.php?archive=/x/14412247-L.jpg"
+
+
+def image_bytes(fmt="JPEG"):
+    buffer = io.BytesIO()
+    Image.new("RGB", (20, 30), "red").save(buffer, format=fmt)
+    return buffer.getvalue()
+
+
+class FakeStreamResponse:
+    """شبیه requests.Response با stream=True؛ فقط چیزهایی که download_cover استفاده می‌کند."""
+
+    def __init__(self, status_code=200, body=b"", headers=None, chunks=None):
+        self.status_code = status_code
+        self.headers = headers or {}
+        self._body = body
+        self._chunks = chunks  # اگر داده شود، به‌جای body تکه‌ها را از این generator می‌دهد
+        self.chunks_read = 0
+        self.closed = False
+
+    def iter_content(self, chunk_size):
+        source = self._chunks or (self._body[i:i + chunk_size] for i in range(0, len(self._body), chunk_size))
+        for chunk in source:
+            self.chunks_read += 1
+            yield chunk
+
+    def close(self):
+        self.closed = True
+
+
+def redirect(location):
+    return FakeStreamResponse(status_code=302, headers={"Location": location})
+
+
+@mock.patch(PATCH_TARGET)
+class DownloadCoverTests(TestCase):
+    def test_success_returns_saveable_file_named_by_isbn(self, fake_get):
+        data = image_bytes("JPEG")
+        fake_get.return_value = FakeStreamResponse(body=data, headers={"Content-Length": str(len(data))})
+        cover = download_cover(COVER_URL, "9789643113445")
+        self.assertEqual(cover.name, "9789643113445.jpg")
+        self.assertEqual(cover.read(), data)
+        # redirect خودکار خاموش، stream روشن، timeout دارد
+        _, kwargs = fake_get.call_args
+        self.assertFalse(kwargs["allow_redirects"])
+        self.assertTrue(kwargs["stream"])
+        self.assertLessEqual(kwargs["timeout"], 10)
+
+    def test_png_gets_png_extension(self, fake_get):
+        fake_get.return_value = FakeStreamResponse(body=image_bytes("PNG"))
+        self.assertEqual(download_cover(COVER_URL, "9789643113445").name, "9789643113445.png")
+
+    def test_redirect_to_archive_org_is_followed(self, fake_get):
+        fake_get.side_effect = [redirect(ARCHIVE_URL), FakeStreamResponse(body=image_bytes())]
+        download_cover(COVER_URL, "9789643113445")
+        self.assertEqual([c.args[0] for c in fake_get.call_args_list], [COVER_URL, ARCHIVE_URL])
+
+    def test_relative_redirect_is_resolved_and_checked(self, fake_get):
+        fake_get.side_effect = [redirect("/b/id/1-M.jpg"), FakeStreamResponse(body=image_bytes())]
+        download_cover(COVER_URL, "9789643113445")
+        self.assertEqual(fake_get.call_args_list[1].args[0], "https://covers.openlibrary.org/b/id/1-M.jpg")
+
+    def test_redirect_outside_allowlist_is_refused_before_request(self, fake_get):
+        for bad in ("https://evil.example.com/x.jpg", "http://ia800507.us.archive.org/x.jpg",
+                    "https://169.254.169.254/latest/meta-data/", "https://evilarchive.org/x.jpg",
+                    "https://archive.org.evil.com/x.jpg"):
+            fake_get.reset_mock()
+            fake_get.side_effect = [redirect(bad)]
+            with self.assertRaises(CoverDownloadError, msg=bad):
+                download_cover(COVER_URL, "9789643113445")
+            # آدرس غیرمجاز هرگز درخواست نشد
+            self.assertEqual(fake_get.call_count, 1, bad)
+
+    def test_first_url_must_be_covers_openlibrary_over_https(self, fake_get):
+        for bad in ("https://evil.example.com/x.jpg", "http://covers.openlibrary.org/b/id/1-L.jpg",
+                    "https://ia800507.us.archive.org/x.jpg",  # مجاز برای redirect، نه برای شروع
+                    "https://covers.openlibrary.org@evil.com/x.jpg",
+                    "https://covers.openlibrary.org:8080/x.jpg", "file:///etc/passwd"):
+            with self.assertRaises(CoverDownloadError, msg=bad):
+                download_cover(bad, "9789643113445")
+        fake_get.assert_not_called()
+
+    def test_too_many_redirects(self, fake_get):
+        fake_get.side_effect = [redirect(COVER_URL) for _ in range(6)]
+        with self.assertRaises(CoverDownloadError):
+            download_cover(COVER_URL, "9789643113445")
+        self.assertEqual(fake_get.call_count, 6)  # آدرس اصلی + ۵ redirect، بعد توقف
+
+    def test_timeout(self, fake_get):
+        fake_get.side_effect = requests.Timeout("read timed out")
+        with self.assertRaises(CoverDownloadError):
+            download_cover(COVER_URL, "9789643113445")
+
+    def test_too_large_by_content_length_is_refused_without_reading(self, fake_get):
+        response = FakeStreamResponse(body=b"x" * 10, headers={"Content-Length": str(6 * 1024 * 1024)})
+        fake_get.return_value = response
+        with self.assertRaises(CoverDownloadError):
+            download_cover(COVER_URL, "9789643113445")
+        self.assertEqual(response.chunks_read, 0)
+        self.assertTrue(response.closed)
+
+    def test_too_large_while_streaming_stops_early(self, fake_get):
+        # سروری که Content-Length نمی‌دهد و بی‌پایان داده می‌فرستد (سقف ایمنی تست: ۲۰۰ تکه)
+        endless = (b"x" * 64 * 1024 for _ in range(200))
+        response = FakeStreamResponse(chunks=endless)
+        fake_get.return_value = response
+        with self.assertRaises(CoverDownloadError):
+            download_cover(COVER_URL, "9789643113445")
+        # کمی بیش از ۵ مگابایت خوانده شد (۸۱ تکه‌ی ۶۴ کیلوبایتی)، نه کل ۱۲٫۵ مگابایت
+        self.assertEqual(response.chunks_read, 81)
+
+    def test_bytes_that_are_not_an_image(self, fake_get):
+        for body in (b"<html>not an image</html>", image_bytes("GIF")):
+            fake_get.return_value = FakeStreamResponse(body=body, headers={"Content-Type": "image/jpeg"})
+            with self.assertRaises(CoverDownloadError):
+                download_cover(COVER_URL, "9789643113445")
+
+    def test_non_200_status(self, fake_get):
+        fake_get.return_value = FakeStreamResponse(status_code=404)
+        with self.assertRaises(CoverDownloadError):
+            download_cover(COVER_URL, "9789643113445")
+
+
+@override_settings(MEDIA_ROOT=READ_MEDIA)
+class BookCreateCoverUrlTests(APITestCase):
+    url = "/catalog/books/"
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="cov", email="cov@example.com", password="Str0ng-Passw0rd!"
+        )
+        self.client.force_authenticate(self.user)
+
+    def post(self, **extra):
+        data = {
+            "title": "سمفونی مردگان", "isbn": "9789643113445", "language": "fa", "price": "1000",
+            "authors": ["عباس معروفی"], "book_file": pdf_file(), **extra,
+        }
+        return self.client.post(self.url, data, format="multipart")
+
+    @mock.patch(PATCH_TARGET)
+    def test_cover_url_is_downloaded_and_saved(self, fake_get):
+        fake_get.return_value = FakeStreamResponse(body=image_bytes("JPEG"))
+        res = self.post(cover_url=COVER_URL)
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED, res.data)
+        book = Book.objects.get()
+        self.assertTrue(book.cover.name.startswith("books/covers/9789643113445"))
+        self.assertTrue(book.cover.name.endswith(".jpg"))
+        self.assertNotIn("cover_url", res.data)
+
+    @mock.patch(PATCH_TARGET)
+    def test_uploaded_file_wins_and_nothing_is_downloaded(self, fake_get):
+        res = self.post(cover=png_file(), cover_url=COVER_URL)
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED, res.data)
+        fake_get.assert_not_called()
+        self.assertTrue(Book.objects.get().cover.name.endswith(".png"))
+
+    @mock.patch(PATCH_TARGET)
+    def test_neither_cover_nor_url(self, fake_get):
+        res = self.post()
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(res.data["cover"], ["تصویر جلد را انتخاب کنید."])
+        fake_get.assert_not_called()
+
+    @mock.patch(PATCH_TARGET)
+    def test_failed_download_creates_nothing(self, fake_get):
+        fake_get.side_effect = [redirect("https://evil.example.com/x.jpg")]
+        res = self.post(cover_url=COVER_URL)
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(res.data["cover"], ["جلد کتاب دریافت نشد؛ لطفاً تصویر را خودتان بارگذاری کنید"])
+        self.assertEqual(Book.objects.count(), 0)
+        self.assertEqual(Person.objects.count(), 0)
+
+    @mock.patch(PATCH_TARGET)
+    def test_url_on_other_host_is_refused_without_request(self, fake_get):
+        res = self.post(cover_url="https://evil.example.com/cover.jpg")
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(res.data["cover"], ["جلد کتاب دریافت نشد؛ لطفاً تصویر را خودتان بارگذاری کنید"])
         fake_get.assert_not_called()
 
 

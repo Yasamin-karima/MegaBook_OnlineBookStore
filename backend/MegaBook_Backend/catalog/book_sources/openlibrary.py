@@ -3,14 +3,20 @@
 مستندات: https://openlibrary.org/dev/docs/api/books
 فقط این فایل آدرس، شکل جواب و اسم فیلدهای Open Library را می‌شناسد.
 """
+import io
 import logging
 import re
+import time
+import warnings
+from urllib.parse import urljoin, urlsplit
 
 import requests
+from django.core.files.base import ContentFile
+from PIL import Image
 
 from catalog.isbn import isbn13_to_10, to_latin_digits
 
-from .base import SourceUnavailable
+from .base import CoverDownloadError, SourceUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -118,3 +124,141 @@ def _largest_cover(cover):
         if url:
             return url
     return None
+
+
+# ---------------------------------------------------------------------------
+# دانلود جلد از Open Library
+#
+# چرا این‌قدر سخت‌گیر؟ (SSRF)
+# وقتی سرور ما آدرسی را که کاربر فرستاده دانلود می‌کند، درخواست از «داخل» شبکه‌ی سرور
+# فرستاده می‌شود، نه از مرورگر کاربر. اگر هر آدرسی قبول شود، مهاجم می‌تواند سرور را وادار کند
+# چیزهایی را بخواند که خودش به آن‌ها دسترسی ندارد: http://db:5432 داخل Docker، پنل‌های داخلی،
+# یا آدرس metadata سرویس ابری (169.254.169.254) که کلیدهای دسترسی را برمی‌گرداند.
+# پس فقط میزبان‌های مشخص Open Library و Internet Archive، فقط با HTTPS.
+#
+# چرا بررسی آدرس اول کافی نیست؟ اگر کتابخانه‌ی HTTP خودش تغییر مسیر (redirect) را دنبال کند،
+# آدرس اول مجاز است ولی جواب آن می‌تواند بگوید «برو به http://127.0.0.1/...» و کتابخانه بی‌آنکه
+# ما ببینیم آن را هم درخواست می‌کند. پس redirect خودکار خاموش است و هر قدم را قبل از درخواست
+# خودمان بررسی می‌کنیم.
+# ---------------------------------------------------------------------------
+
+COVER_FIRST_HOST = "covers.openlibrary.org"
+COVER_TIMEOUT_SECONDS = 10  # کل دانلود، همه‌ی قدم‌ها روی هم
+COVER_MAX_BYTES = 5 * 1024 * 1024  # همان سقف جلدی که کاربر آپلود می‌کند
+COVER_MAX_REDIRECTS = 5
+COVER_CHUNK_BYTES = 64 * 1024
+COVER_FORMATS = {"JPEG": "jpg", "PNG": "png"}
+_REDIRECT_CODES = {301, 302, 303, 307, 308}
+
+
+def _cover_host_allowed(host):
+    # covers.openlibrary.org، خود archive.org، یا زیردامنه‌اش (مثل ia800507.us.archive.org).
+    # «.archive.org» با نقطه: evilarchive.org یا archive.org.evil.com قبول نمی‌شوند.
+    return host == COVER_FIRST_HOST or host == "archive.org" or host.endswith(".archive.org")
+
+
+def _check_cover_url(url, first):
+    """هر قدم، قبل از درخواست. هر ایرادی: CoverDownloadError."""
+    try:
+        parts = urlsplit(url)
+        port = parts.port  # پورت نامعتبر ValueError می‌دهد
+    except ValueError as error:
+        raise CoverDownloadError(f"invalid url: {url!r}") from error
+    host = (parts.hostname or "").lower()
+    if parts.scheme != "https":
+        raise CoverDownloadError(f"not https: {url!r}")
+    # https://covers.openlibrary.org@evil.com/ میزبانش evil.com است؛ اسم کاربری در آدرس را قبول نمی‌کنیم
+    if parts.username or parts.password:
+        raise CoverDownloadError(f"credentials in url: {url!r}")
+    if port not in (None, 443):
+        raise CoverDownloadError(f"unexpected port: {url!r}")
+    if first and host != COVER_FIRST_HOST:
+        raise CoverDownloadError(f"cover must start at {COVER_FIRST_HOST}: {url!r}")
+    if not _cover_host_allowed(host):
+        raise CoverDownloadError(f"host not allowed: {host!r}")
+
+
+def _read_limited(response, deadline):
+    """بدنه را تکه‌تکه می‌خواند و همان لحظه که از سقف حجم یا زمان گذشت متوقف می‌شود.
+
+    کل فایل هیچ‌وقت یک‌جا خوانده نمی‌شود: اگر سرور فایل ۲ گیگابایتی بفرستد (یا در Content-Length
+    دروغ بگوید)، حداکثر کمی بیشتر از ۵ مگابایت در حافظه می‌آید.
+    """
+    declared = response.headers.get("Content-Length")
+    if declared and declared.isdigit() and int(declared) > COVER_MAX_BYTES:
+        raise CoverDownloadError(f"too large (Content-Length {declared})")
+    data = bytearray()
+    for chunk in response.iter_content(chunk_size=COVER_CHUNK_BYTES):
+        data += chunk
+        if len(data) > COVER_MAX_BYTES:
+            raise CoverDownloadError("too large while streaming")
+        # timeout در requests برای «هر بار انتظار» است، نه کل دانلود؛ سروری که هر چند ثانیه
+        # یک بایت بفرستد بدون این بررسی دانلود را تا ابد طول می‌دهد
+        if time.monotonic() > deadline:
+            raise CoverDownloadError("took too long")
+    return bytes(data)
+
+
+def _to_image_file(data, isbn):
+    """بایت‌ها را با Pillow باز می‌کند (به آدرس یا Content-Type اعتماد نمی‌کنیم) و فایل قابل ذخیره می‌سازد."""
+    try:
+        with warnings.catch_warnings():
+            # تصویری با تعداد پیکسل غیرعادی (bomb) را رد کن، نه فقط هشدار
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(io.BytesIO(data)) as image:
+                image_format = image.format
+                image.verify()  # ساختار فایل را بدون کشیدن کامل تصویر بررسی می‌کند
+    except Exception as error:  # Pillow برای فایل خراب انواع مختلفی خطا می‌دهد
+        raise CoverDownloadError(f"not a valid image: {error}") from error
+    extension = COVER_FORMATS.get(image_format)
+    if extension is None:
+        raise CoverDownloadError(f"unsupported image format: {image_format}")
+    # ContentFile فایلِ در حافظه است؛ ImageField آن را مثل فایل آپلودشده در upload_to ذخیره می‌کند
+    return ContentFile(data, name=f"{isbn}.{extension}")
+
+
+def download_cover(url, isbn):
+    """جلد را از Open Library دانلود و تایید می‌کند. => ContentFile آماده‌ی Book.cover.
+
+    هر ایرادی (آدرس یا redirect غیرمجاز، خطای شبکه، کندی، حجم زیاد، تصویر نامعتبر):
+    CoverDownloadError. چیزی ذخیره نمی‌شود؛ ذخیره کار serializer است.
+    """
+    deadline = time.monotonic() + COVER_TIMEOUT_SECONDS
+    current = url
+    # قدم ۰ آدرس اصلی است، بعد حداکثر ۵ redirect
+    for hop in range(COVER_MAX_REDIRECTS + 1):
+        _check_cover_url(current, first=(hop == 0))
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise CoverDownloadError("took too long")
+        try:
+            response = requests.get(
+                current,
+                headers=HEADERS,
+                timeout=remaining,
+                stream=True,  # بدنه هنوز خوانده نشده؛ _read_limited تکه‌تکه می‌خواند
+                allow_redirects=False,  # redirect را خودمان دنبال و بررسی می‌کنیم
+            )
+        except requests.RequestException as error:
+            logger.warning("Cover download failed for %s: %s", isbn, error)
+            raise CoverDownloadError(str(error)) from error
+
+        try:
+            if response.status_code in _REDIRECT_CODES:
+                location = response.headers.get("Location")
+                if not location:
+                    raise CoverDownloadError("redirect without Location")
+                # Location ممکن است نسبی باشد؛ نسبت به آدرس فعلی کامل می‌شود و در قدم بعد بررسی می‌شود
+                current = urljoin(current, location)
+                continue
+            if response.status_code != 200:
+                raise CoverDownloadError(f"HTTP {response.status_code}")
+            try:
+                data = _read_limited(response, deadline)
+            except requests.RequestException as error:
+                raise CoverDownloadError(str(error)) from error
+        finally:
+            response.close()
+        return _to_image_file(data, isbn)
+
+    raise CoverDownloadError("too many redirects")

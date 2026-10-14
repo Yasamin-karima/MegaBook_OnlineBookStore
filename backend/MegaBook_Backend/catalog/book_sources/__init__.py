@@ -9,7 +9,8 @@ view فقط lookup_isbn و SourceUnavailable را می‌شناسد و از جز
 2. fetch آن را به SOURCES اضافه کنید. view دست نمی‌خورد.
 """
 from . import openlibrary
-from .base import SourceUnavailable
+from .base import CoverDownloadError, SourceUnavailable
+from .openlibrary import download_cover
 
 # کلیدهای خروجی هر منبع، با اسم فیلدهای مدل Book (نه اسم‌های منبع بیرونی)
 BOOK_FIELDS = ("title", "authors", "publisher", "page_count", "publication_year", "cover_url", "subjects")
@@ -17,7 +18,7 @@ BOOK_FIELDS = ("title", "authors", "publisher", "page_count", "publication_year"
 # به ترتیب امتحان می‌شوند
 SOURCES = [openlibrary.fetch]
 
-__all__ = ["BOOK_FIELDS", "SOURCES", "SourceUnavailable", "lookup_isbn"]
+__all__ = ["BOOK_FIELDS", "SOURCES", "CoverDownloadError", "SourceUnavailable", "download_cover", "lookup_isbn"]
 
 
 def lookup_isbn(isbn13):

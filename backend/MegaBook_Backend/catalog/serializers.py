@@ -1,6 +1,7 @@
 from django.db import IntegrityError, transaction
 from rest_framework import serializers
 
+from .book_sources import CoverDownloadError, download_cover
 from .isbn import ISBN_CHECKSUM, isbn13_is_valid
 from .models import BOOK_EXISTS_APPROVED, BOOK_EXISTS_PENDING, Book, Category, Person, Publisher, Tag
 
@@ -27,6 +28,9 @@ MESSAGES = {
 def messages(**overrides):
     return {**MESSAGES, **overrides}
 
+
+COVER_REQUIRED = "تصویر جلد را انتخاب کنید."
+COVER_DOWNLOAD_FAILED = "جلد کتاب دریافت نشد؛ لطفاً تصویر را خودتان بارگذاری کنید"
 
 ISBN_LENGTH = "شابک باید ۱۳ رقم باشد."
 ISBN_TAKEN = BOOK_EXISTS_APPROVED
@@ -109,9 +113,14 @@ class BookCreateSerializer(serializers.ModelSerializer):
     )
     edition = serializers.CharField(max_length=50, required=False, allow_blank=True, error_messages=messages())
 
-    # در مدل blank=True است، ولی برای ارسال از فرم، جلد الزامی است (بدون تغییر مدل)
-    cover = serializers.ImageField(
-        error_messages=messages(required="تصویر جلد را انتخاب کنید.", empty="تصویر جلد را انتخاب کنید.")
+    # جلد یا به‌صورت فایل آپلود می‌شود (cover) یا از Open Library دانلود می‌شود (cover_url).
+    # یکی از این دو الزامی است (to_internal_value)؛ اگر هر دو باشند فایل آپلودشده برنده است (validate).
+    # در مدل blank=True است؛ این قاعده فقط در serializer است و مدل تغییری نکرده.
+    cover = serializers.ImageField(required=False, error_messages=messages(empty=COVER_REQUIRED))
+    # فقط برای نوشتن؛ ستون مدل نیست و قبل از ساخت کتاب از داده برداشته می‌شود
+    cover_url = serializers.URLField(
+        required=False, allow_blank=True, write_only=True, max_length=500,
+        error_messages=messages(invalid=COVER_DOWNLOAD_FAILED),
     )
     # write_only: فایل کامل کتاب محتوای پولی است و آدرسش در هیچ پاسخی برنمی‌گردد
     book_file = serializers.FileField(
@@ -137,7 +146,7 @@ class BookCreateSerializer(serializers.ModelSerializer):
         # به ترتیب فیلدها در فرم (AddBookWizard)؛ DRF خطاها را به همین ترتیب برمی‌گرداند
         # و فرم به اولین خطا اسکرول می‌کند
         fields = [
-            "id", "cover", "title", "original_title", "authors", "translators",
+            "id", "cover", "cover_url", "title", "original_title", "authors", "translators",
             "isbn", "edition", "language", "publisher", "page_count", "publication_year",
             "description", "category", "tags", "book_file", "sample_file", "price",
             "status", "uploaded_by", "created_at",
@@ -186,6 +195,35 @@ class BookCreateSerializer(serializers.ModelSerializer):
         if not is_pdf(value):
             raise serializers.ValidationError("فقط فایل PDF پذیرفته می‌شود.")
         return value
+
+    # --- جلد: فایل آپلودشده یا cover_url ---
+
+    def to_internal_value(self, data):
+        # «یکی از cover و cover_url الزامی است» اینجا بررسی می‌شود، نه در validate()، تا خطای
+        # جلدِ خالی همراه خطای بقیه‌ی فیلدها برگردد. validate() فقط وقتی اجرا می‌شود که همه‌ی
+        # فیلدها درست باشند.
+        errors = {}
+        try:
+            value = super().to_internal_value(data)
+        except serializers.ValidationError as exc:
+            errors = dict(exc.detail)
+        if not data.get("cover") and not data.get("cover_url"):
+            errors.setdefault("cover", [COVER_REQUIRED])
+        if errors:
+            raise serializers.ValidationError(errors)
+        return value
+
+    def validate(self, attrs):
+        # cover_url ستون مدل نیست؛ همیشه از داده برداشته می‌شود
+        cover_url = attrs.pop("cover_url", "")
+        if attrs.get("cover"):
+            return attrs  # فایل آپلودشده برنده است؛ چیزی دانلود نمی‌شود
+        # دانلود و بررسی جلد قبل از ذخیره‌ی کتاب؛ اگر شکست بخورد هیچ چیز ساخته نمی‌شود
+        try:
+            attrs["cover"] = download_cover(cover_url, attrs["isbn"])
+        except CoverDownloadError:
+            raise serializers.ValidationError({"cover": [COVER_DOWNLOAD_FAILED]})
+        return attrs
 
     # --- ساخت ---
 
