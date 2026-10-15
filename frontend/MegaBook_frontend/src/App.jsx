@@ -7,10 +7,11 @@ import HomePage from './components/HomePage';
 import Footer from './components/Footer';
 import LoginPage from './components/Login';
 import SignupPage from './components/Signup';
-import ListUsers from './components/ListUsers';
 import AddBookWizard from './components/AddBookWizard';
 import RequestByIsbnPage from './components/RequestByIsbnPage';
 import BookDetailPage from './components/BookDetailPage';
+import AccountPage from './components/AccountPage';
+import WalletPage from './components/WalletPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import useGoBack from './hooks/useGoBack';
 
@@ -39,13 +40,22 @@ const RequestByIsbnRoute = () => {
   return <RequestByIsbnPage onBack={goBack} />;
 }
 
+const AccountRoute = () => {
+  const goBack = useGoBack();
+  return <AccountPage onBack={goBack} />;
+}
+
+const WalletRoute = () => {
+  const goBack = useGoBack();
+  return <WalletPage onBack={goBack} />;
+}
+
 const App = () => {
   return (
     <Routes>
       <Route path="/" element={<Home />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
-      <Route path="/users" element={<ListUsers />} />
       {/* فقط برای کاربر واردشده؛ بقیه به /login فرستاده می‌شوند */}
       <Route
         path="/books/new"
@@ -64,6 +74,24 @@ const App = () => {
         element={
           <ProtectedRoute>
             <RequestByIsbnRoute />
+          </ProtectedRoute>
+        }
+      />
+      {/* The user's own account: names, email, phone, logout */}
+      <Route
+        path="/account"
+        element={
+          <ProtectedRoute>
+            <AccountRoute />
+          </ProtectedRoute>
+        }
+      />
+      {/* The user's wallet: balance, history, top-up, withdrawal */}
+      <Route
+        path="/wallet"
+        element={
+          <ProtectedRoute>
+            <WalletRoute />
           </ProtectedRoute>
         }
       />

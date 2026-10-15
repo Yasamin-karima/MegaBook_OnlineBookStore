@@ -22,9 +22,9 @@ from django.urls import path, include
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('accounts/', include('accounts.urls')),
-    path('api/', include('api.urls')),
     path('catalog/', include('catalog.urls')),
     path('book-requests/', include('book_requests.urls')),
+    path('wallet/', include('wallet.urls')),
 ]
 
 # فایل‌های آپلودشده (جلد، PDF) را در حالت توسعه خود جنگو سرو می‌کند.

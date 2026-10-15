@@ -6,21 +6,26 @@ function saveTokens({ access, refresh }) {
   localStorage.setItem('refresh_token', refresh);
 }
 
-// => { user: { id, username, email, date_joined }, access, refresh }
-// بکند بعد از ثبت‌نام توکن هم برمی‌گردونه، پس کاربر همون لحظه وارد شده
-export async function registerUser({ username, email, password }) {
+// User object returned by the backend:
+//   { id, first_name, last_name, email, phone, is_staff, date_joined }  (email or phone may be null)
+
+// email and phone: at least one is required; send null for the one not used.
+// => { user, access, refresh }
+// The backend returns tokens on sign-up too, so the user is logged in right away.
+export async function registerUser({ first_name, last_name, email, phone, password }) {
   const response = await apiClient.post('/accounts/register/', {
-    username, email, password,
+    first_name, last_name, email, phone, password,
   });
   saveTokens(response.data);
   return response.data;
 }
 
-// => { access, refresh, user: { id, username, email, date_joined } }
-// اگه نام کاربری یا رمز اشتباه باشه، جنگو 401 برمی‌گردونه
-export async function loginUser({ username, password }) {
+// identifier: email or mobile number, in any format the backend accepts.
+// => { access, refresh, user }
+// Wrong credentials: 401 with a Persian message in response.data.detail
+export async function loginUser({ identifier, password }) {
   const response = await apiClient.post('/accounts/login/', {
-    username, password,
+    identifier, password,
   });
   saveTokens(response.data);
   return response.data;
@@ -36,8 +41,34 @@ export async function logoutUser() {
   }
 }
 
-// => { id, username, email, date_joined } کاربری که الان وارد شده
+// => the currently logged-in user (same shape as above)
 export async function getCurrentUser() {
   const response = await apiClient.get('/accounts/me/');
   return response.data;
+}
+
+// Edit the logged-in user. Send only the fields to change:
+//   { first_name?, last_name?, email?, phone?, current_password? }
+// email/phone: "" or null removes it (the other one must remain).
+// Changing email or phone needs current_password.
+// => the updated user (same shape as above). Invalid data: 400 with Persian messages per field.
+export async function updateCurrentUser(fields) {
+  const response = await apiClient.patch('/accounts/me/', fields);
+  return response.data;
+}
+
+// آیا refresh token داریم و هنوز منقضی نشده؟
+// access token ممکن است منقضی باشد؛ مهم نیست، interceptor در client.js آن را با refresh تازه می‌کند.
+// Used by ProtectedRoute and the navbar ("ورود" or "حساب").
+export function isLoggedIn() {
+  const token = localStorage.getItem('refresh_token');
+  if (!token) return false;
+  try {
+    // بخش وسط JWT (payload) به شکل base64url است و زمان انقضا (exp، به ثانیه) را دارد.
+    // این فقط برای تصمیم نمایش صفحه است؛ اعتبار واقعی توکن را همیشه بک‌اند بررسی می‌کند.
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return payload.exp * 1000 > Date.now();
+  } catch {
+    return false;
+  }
 }

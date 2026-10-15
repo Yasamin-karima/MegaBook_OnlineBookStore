@@ -38,6 +38,9 @@ class BookRequestAdmin(admin.ModelAdmin):
 @admin.register(RequestEntry)
 class RequestEntryAdmin(admin.ModelAdmin):
     list_display = ("request", "requester", "created_at")
-    search_fields = ("request__isbn", "request__title", "requester__username")
+    search_fields = (
+        "request__isbn", "request__title",
+        "requester__email", "requester__phone", "requester__first_name", "requester__last_name",
+    )
     list_select_related = ("request", "requester")
     readonly_fields = ("created_at",)

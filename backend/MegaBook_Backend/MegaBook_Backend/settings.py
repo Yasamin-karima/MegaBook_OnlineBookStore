@@ -11,7 +11,7 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
 from pathlib import Path
-from decouple import config
+from decouple import Csv, config
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -20,13 +20,16 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-hexxw@vtt^)_6kv&))@#^#y^)+v8j*fwry)mpakneafv-r0d_0'
+# Read from .env (see docker-compose.yml env_file), never written in code:
+# a key in the repository is public to anyone who can read it.
+SECRET_KEY = config('DJANGO_SECRET_KEY')
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# Off unless .env says otherwise, so a server where DJANGO_DEBUG is forgotten is safe.
+# Development-only features check this, e.g. wallet's mock payment gateway.
+DEBUG = config('DJANGO_DEBUG', default=False, cast=bool)
 
-ALLOWED_HOSTS = []
+# With DEBUG off, Django answers only these host names
+ALLOWED_HOSTS = config('DJANGO_ALLOWED_HOSTS', default='localhost,127.0.0.1', cast=Csv())
 
 
 # Application definition
@@ -45,11 +48,9 @@ INSTALLED_APPS = [
     'corsheaders',
 
     'accounts',
-    'api',
     'catalog',
     'book_requests',
-
-    
+    'wallet',
 ]
 
 MIDDLEWARE = [
@@ -101,6 +102,9 @@ DATABASES = {
 # Custom user model (accounts.Account) instead of django.contrib.auth.models.User
 AUTH_USER_MODEL = 'accounts.Account'
 
+# Log in with email or phone number (replaces Django's default ModelBackend)
+AUTHENTICATION_BACKENDS = ['accounts.backends.IdentifierBackend']
+
 
 # Password validation
 # https://docs.djangoproject.com/en/6.1/ref/settings/#auth-password-validators
@@ -108,6 +112,8 @@ AUTH_USER_MODEL = 'accounts.Account'
 AUTH_PASSWORD_VALIDATORS = [
     {
         'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+        # Default list has username instead of phone; a password can't look like the user's phone number either
+        'OPTIONS': {'user_attributes': ('first_name', 'last_name', 'email', 'phone')},
     },
     {
         'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
@@ -171,3 +177,21 @@ MAILERS = {
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+# Private uploads (books' full files, top-up receipts): OUTSIDE MEDIA_ROOT, so no
+# /media/ URL reaches them, in development or behind nginx. They are served only
+# by views that check permission (MegaBook_Backend/private_files.py).
+PRIVATE_MEDIA_ROOT = BASE_DIR / "private_media"
+# How long a signed download link stays valid
+PRIVATE_FILE_LINK_SECONDS = 300
+# Production: an nginx `internal` location for PRIVATE_MEDIA_ROOT (e.g. "/protected/").
+# When set, Django only checks permission and nginx sends the file (X-Accel-Redirect).
+PRIVATE_MEDIA_ACCEL_PREFIX = config('PRIVATE_MEDIA_ACCEL_PREFIX', default='')
+
+# Test runs keep private uploads in a temporary folder (MegaBook_Backend/test_runner.py)
+TEST_RUNNER = 'MegaBook_Backend.test_runner.TempPrivateMediaRunner'
+
+# Wallet: MegaBook's bank card for card-to-card top-ups, shown on the wallet page.
+# Empty until set in .env; the page then tells the user to contact support.
+MEGABOOK_CARD_NUMBER = config('MEGABOOK_CARD_NUMBER', default='')
+MEGABOOK_CARD_HOLDER = config('MEGABOOK_CARD_HOLDER', default='')

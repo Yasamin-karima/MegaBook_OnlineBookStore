@@ -3,3 +3,6 @@ __pycache__/
 *.pyc
 venv/
 .env
+# Uploaded files are data, not code: never bake them into the image
+media/
+private_media/

@@ -9,6 +9,10 @@
   برای ترجمه‌های فارسی سال شمسی، برای کتاب‌های انگلیسی سال میلادی.
 - category: نام یکی از CATEGORIES.
 - status: یکی از مقادیر Book.Status ("approved" / "pending" / "rejected").
+- price: قیمت فروشگاه به تومان (صفر = رایگان)؛ برای کتاب تأییدنشده None (هنوز تعیین نشده).
+- seller_share: سهم بارگذارنده از هر فروش به تومان؛ برای کتاب تأییدشده نباید از price بیشتر باشد.
+- uploader (اختیاری): "admin" یعنی superuser بارگذارنده است و seller_share باید صفر باشد؛
+  بدون آن، کاربر نمونه‌ی «بارگذارنده‌ی نمونه» (seed_books) بارگذارنده است.
 - color: رنگ پس‌زمینه‌ی جلدی که برای کتاب ساخته می‌شود.
 """
 
@@ -41,6 +45,7 @@ SAMPLE_BOOKS = [
         "page_count": 336,
         "publication_year": 2006,
         "price": 185000,
+        "seller_share": 130000,
         "status": "approved",
         "color": "#8c4a2f",
         "description": (
@@ -61,6 +66,8 @@ SAMPLE_BOOKS = [
         "page_count": 328,
         "publication_year": 1961,
         "price": 0,  # تنها کتاب رایگان
+        "seller_share": 0,
+        "uploader": "admin",
         "status": "approved",
         "color": "#3b3b3b",
         "description": (
@@ -81,6 +88,7 @@ SAMPLE_BOOKS = [
         "page_count": 372,
         "publication_year": 2004,
         "price": 150000,
+        "seller_share": 105000,
         "status": "approved",
         "color": "#1f5f8b",
         "description": (
@@ -99,7 +107,8 @@ SAMPLE_BOOKS = [
         "tags": ["خودیاری", "توسعه فردی", "عادت", "پرفروش جهانی"],
         "page_count": 320,
         "publication_year": 2018,
-        "price": 245000,
+        "price": None,  # pending: the store price is set on approval
+        "seller_share": 170000,  # the uploader's proposal
         "status": "pending",  # برای تست: فروشگاه نباید این را نشان دهد
         "color": "#d9a21b",
         "description": (
@@ -120,6 +129,7 @@ SAMPLE_BOOKS = [
         "publication_year": 1998,
         "edition": "Tenth Anniversary Edition",
         "price": 165000,
+        "seller_share": 115000,
         "status": "approved",
         "color": "#14213d",
         "description": (
@@ -138,7 +148,8 @@ SAMPLE_BOOKS = [
         "tags": ["فانتزی", "اقتباس سینمایی", "پرفروش جهانی"],
         "page_count": 309,
         "publication_year": 1998,
-        "price": 210000,
+        "price": None,  # rejected before a price was set
+        "seller_share": 150000,
         "status": "rejected",  # برای تست: فروشگاه نباید این را نشان دهد
         "color": "#7a1f2b",
         "description": (
@@ -161,6 +172,7 @@ SAMPLE_BOOKS = [
         "page_count": 103,
         "publication_year": 1405,
         "price": 45000,
+        "seller_share": 32000,
         "status": "approved",
         "color": "#2a9d8f",
         "description": (
@@ -182,6 +194,7 @@ SAMPLE_BOOKS = [
         "page_count": 200,
         "publication_year": 1402,
         "price": 95000,
+        "seller_share": 66000,
         "status": "approved",
         "color": "#c26a1b",
         "description": (
@@ -202,6 +215,7 @@ SAMPLE_BOOKS = [
         "page_count": 462,
         "publication_year": 1403,
         "price": 280000,
+        "seller_share": 196000,
         "status": "approved",
         "color": "#5a3e85",
         "description": (
@@ -223,6 +237,8 @@ SAMPLE_BOOKS = [
         "page_count": 624,
         "publication_year": 1404,
         "price": 320000,
+        "seller_share": 0,
+        "uploader": "admin",
         "status": "approved",
         "color": "#386641",
         "description": (

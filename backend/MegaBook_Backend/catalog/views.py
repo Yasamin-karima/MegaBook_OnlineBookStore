@@ -1,9 +1,12 @@
+from django.http import Http404
 from rest_framework import filters, generics, permissions, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+from MegaBook_Backend import private_files
 
 from .book_sources import SourceUnavailable, lookup_isbn
 from .isbn import InvalidISBN, normalize_isbn
@@ -141,3 +144,39 @@ class CategoryListView(generics.ListAPIView):
     permission_classes = [permissions.AllowAny]
     # توکن (حتی منقضی) نادیده گرفته شود؛ این فهرست عمومی است
     authentication_classes = []
+
+
+# --- The full book file (private; DECISIONS 3.8 and 3.15) ---
+
+BOOK_FILE = "book-file"  # the signing salt's name; a receipt token can't open a book
+
+
+class BookFileLinkView(APIView):
+    """GET /catalog/books/<id>/file-link/ (logged in) -> { url, expires_in }
+
+    A signed download link for the full file, valid for a few minutes, for a user
+    allowed to download it (Book.can_download_file). Anyone else gets 404, the same
+    as a book that doesn't exist, so the response doesn't reveal which books exist.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, pk):
+        book = Book.objects.filter(pk=pk).first()
+        if book is None or not book.can_download_file(request.user):
+            return Response({"detail": "پیدا نشد."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(private_files.make_link(request, BOOK_FILE, "book_file", book.pk, request.user))
+
+
+def book_file_view(request, pk):
+    """GET /catalog/books/<id>/file/?t=<signed token> -> the PDF.
+
+    A plain Django view (not DRF): the browser opens it with a plain link, which
+    can't carry the JWT header. Permission is checked again here, because the user
+    may have lost access since the link was made. Staff logged in to the admin
+    (session cookie) need no token.
+    """
+    book = Book.objects.filter(pk=pk).first()
+    user = private_files.download_user(request, BOOK_FILE, pk)
+    if book is None or not book.can_download_file(user):
+        raise Http404
+    return private_files.file_response(book.book_file, book.title)

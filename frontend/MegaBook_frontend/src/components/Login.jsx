@@ -3,7 +3,8 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import logo from "../assets/logo.svg";
 // 🔌 اتصال به بکند: POST /accounts/login/ (در src/api/auth.js)
 // توکن‌ها همان‌جا در localStorage ذخیره می‌شوند.
-// اگر نام کاربری یا رمز اشتباه باشد، جنگو وضعیت 401 برمی‌گرداند.
+// Wrong credentials: 401 with one Persian message in data.detail, which never
+// says whether the email/phone has an account.
 import { loginUser } from "../api/auth";
 
 export default function LoginPage() {
@@ -12,8 +13,9 @@ export default function LoginPage() {
   const location = useLocation();
   const redirectTo = location.state?.from?.pathname || "/";
   // مقدار فیلدها (controlled inputs: مقدار هر input از state خوانده می‌شود)
-  const [form, setForm] = useState({ username: "", password: "" });
-  // خطای هر فیلد به‌صورت جدا، مثلاً { username: "..." }
+  // identifier: email or mobile number; the backend tells them apart by "@"
+  const [form, setForm] = useState({ identifier: "", password: "" });
+  // خطای هر فیلد به‌صورت جدا، مثلاً { identifier: "..." }
   const [errors, setErrors] = useState({});
   // خطایی که از سمت سرور می‌آید و مربوط به فیلد خاصی نیست
   const [serverError, setServerError] = useState("");
@@ -33,7 +35,7 @@ export default function LoginPage() {
   // اعتبارسنجی اصلی همیشه در جنگو انجام می‌شود.
   function validate() {
     const next = {};
-    if (!form.username.trim()) next.username = "نام کاربری را وارد کنید.";
+    if (!form.identifier.trim()) next.identifier = "ایمیل یا شماره موبایل را وارد کنید.";
     if (!form.password) next.password = "رمز عبور را وارد کنید.";
     return next;
   }
@@ -50,7 +52,7 @@ export default function LoginPage() {
 
     try {
       await loginUser({
-        username: form.username.trim(),
+        identifier: form.identifier.trim(),
         password: form.password,
       });
 
@@ -61,8 +63,13 @@ export default function LoginPage() {
       setTimeout(() => navigate(redirectTo, { replace: true }), 800);
     } catch (err) {
       const status = err.response?.status;
+      const data = err.response?.data;
       if (status === 401) {
-        setServerError("نام کاربری یا رمز عبور اشتباه است.");
+        // The backend's Persian message; the fallback only covers an unexpected body
+        setServerError(data?.detail || "ایمیل/شماره موبایل یا رمز عبور اشتباه است.");
+      } else if (status === 400 && data) {
+        // Field errors, e.g. { identifier: ["..."] }
+        setErrors({ identifier: data.identifier?.[0], password: data.password?.[0] });
       } else {
         // خطای شبکه یا خطای ۵۰۰ سرور
         setServerError("ارتباط با سرور برقرار نشد. دوباره تلاش کنید.");
@@ -92,7 +99,7 @@ export default function LoginPage() {
             </Link>
             <h1 className="text-2xl font-bold">ورود به مگابوک</h1>
             <p className="mt-1 text-sm text-blue-100">
-              با نام کاربری و رمز عبور خود وارد شوید.
+              با ایمیل یا شماره موبایل و رمز عبور خود وارد شوید.
             </p>
           </div>
         </div>
@@ -124,35 +131,36 @@ export default function LoginPage() {
             </div>
           )}
 
-          {/* ── نام کاربری ── */}
+          {/* ── ایمیل یا شماره موبایل ── */}
           <div>
             <label
-              htmlFor="username"
+              htmlFor="identifier"
               className="mb-1.5 block text-sm font-medium text-gray-700"
             >
-              نام کاربری
+              ایمیل یا شماره موبایل
             </label>
             <input
-              id="username"
-              name="username"
+              id="identifier"
+              name="identifier"
               type="text"
-              dir="ltr" // نام کاربری لاتین است، پس چپ‌به‌راست تایپ می‌شود
+              dir="ltr" // email and phone are typed left-to-right
+              // "username" lets the browser offer saved credentials for this field
               autoComplete="username"
               autoCapitalize="none"
-              value={form.username}
+              value={form.identifier}
               onChange={handleChange}
-              aria-invalid={Boolean(errors.username)}
-              aria-describedby={errors.username ? "username-error" : undefined}
-              placeholder="username"
+              aria-invalid={Boolean(errors.identifier)}
+              aria-describedby={errors.identifier ? "identifier-error" : undefined}
+              placeholder="name@example.com / 09123456789"
               className={`h-12 w-full rounded-xl border bg-white px-4 text-left text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-600/30 ${
-                errors.username
+                errors.identifier
                   ? "border-red-400 focus:border-red-500"
                   : "border-gray-300 focus:border-blue-600"
               }`}
             />
-            {errors.username && (
-              <p id="username-error" className="mt-1.5 text-xs text-red-600">
-                {errors.username}
+            {errors.identifier && (
+              <p id="identifier-error" className="mt-1.5 text-xs text-red-600">
+                {errors.identifier}
               </p>
             )}
           </div>

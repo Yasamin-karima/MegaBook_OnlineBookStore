@@ -2,44 +2,37 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import logo from "../assets/logo.svg";
 // ─────────────────────────────────────────────────────────────
-// 🔌 اتصال به بکند: POST /accounts/register/ (در src/api/auth.js)
+// Backend: POST /accounts/register/ (src/api/auth.js)
 //
-// RegisterSerializer در جنگو:
-//   ۱. یکتا بودن username و email را چک می‌کند،
-//   ۲. رمز را با validate_password جنگو بررسی می‌کند (حداقل ۸ کاراکتر، خیلی ساده نباشد، ...)،
-//   ۳. کاربر را با create_user(...) می‌سازد تا رمز هش شود.
+// The user signs up with an email OR a mobile number (they can add the other later).
+// The backend normalizes the phone (Persian digits, +98, spaces, ...), checks that
+// the email/phone isn't taken, runs Django's password validators, and creates the
+// user with create_user so the password is hashed.
 //
-// اگر داده نامعتبر باشد، DRF وضعیت 400 و خطاها را به این شکل برمی‌گرداند:
-//   { "username": ["A user with that username already exists."],
-//     "email": ["..."] }
+// On invalid data it returns 400 with Persian messages per field:
+//   { "phone": ["..."], "password": ["...", "..."], "non_field_errors": ["..."] }
 // ─────────────────────────────────────────────────────────────
 import { registerUser } from "../api/auth";
 
-// پیام‌های انگلیسی DRF را به فارسی تبدیل می‌کند.
-// هر پیام ناشناخته‌ای هم یک پیام فارسی عمومی می‌گیرد تا متن انگلیسی به کاربر نرسد.
-function translateServerErrors(data) {
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const METHODS = [
+    { value: "email", label: "با ایمیل" },
+    { value: "phone", label: "با شماره موبایل" },
+];
+
+// { field: ["msg", ...] } from DRF -> { field: "msg msg" } for display under each input
+function fieldErrors(data) {
     const result = {};
-    if (data.username) {
-        result.username = data.username[0].includes("already exists")
-            ? "این نام کاربری قبلاً ثبت شده است."
-            : "نام کاربری معتبر نیست.";
-    }
-    if (data.email) {
-        result.email = data.email[0].includes("already exists")
-            ? "با این ایمیل قبلاً حساب ساخته شده است."
-            : "ایمیل معتبر نیست.";
-    }
-    if (data.password) {
-        // خطاهای validate_password جنگو (مثلاً «رمز خیلی رایج است»)
-        result.password = "این رمز عبور خیلی ساده است. رمز قوی‌تری انتخاب کنید.";
+    for (const field of ["first_name", "last_name", "email", "phone", "password"]) {
+        if (Array.isArray(data[field])) result[field] = data[field].join(" ");
     }
     return result;
 }
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 export default function SignupPage() {
-    const [form, setForm] = useState({ username: "", email: "", password: "" });
+    const [method, setMethod] = useState("email");
+    const [form, setForm] = useState({ first_name: "", last_name: "", email: "", phone: "", password: "" });
     const [errors, setErrors] = useState({});
     const [serverError, setServerError] = useState("");
     const [showPassword, setShowPassword] = useState(false);
@@ -53,21 +46,30 @@ export default function SignupPage() {
         if (serverError) setServerError("");
     }
 
-    // اعتبارسنجی سمت کلاینت (فقط برای بازخورد سریع؛ مرجع نهایی جنگو است)
+    function changeMethod(next) {
+        setMethod(next);
+        // The hidden field's error no longer applies
+        setErrors((prev) => ({ ...prev, email: "", phone: "" }));
+        setServerError("");
+    }
+
+    // Client-side checks are only for quick feedback; Django has the final say.
+    // The phone format is checked only on the server, where its rules live.
     function validate() {
         const next = {};
-        const username = form.username.trim();
-        const email = form.email.trim();
+        if (!form.first_name.trim()) next.first_name = "نام را وارد کنید.";
+        if (!form.last_name.trim()) next.last_name = "نام خانوادگی را وارد کنید.";
 
-        if (!username) next.username = "نام کاربری را وارد کنید.";
-        else if (/\s/.test(username)) next.username = "نام کاربری نباید فاصله داشته باشد.";
-        else if (username.length > 150) next.username = "نام کاربری حداکثر ۱۵۰ کاراکتر است.";
-
-        if (!email) next.email = "ایمیل را وارد کنید.";
-        else if (!EMAIL_PATTERN.test(email)) next.email = "ایمیل را به شکل name@example.com وارد کنید.";
+        if (method === "email") {
+            const email = form.email.trim();
+            if (!email) next.email = "ایمیل را وارد کنید.";
+            else if (!EMAIL_PATTERN.test(email)) next.email = "ایمیل را به شکل name@example.com وارد کنید.";
+        } else if (!form.phone.trim()) {
+            next.phone = "شماره موبایل را وارد کنید.";
+        }
 
         if (!form.password) next.password = "رمز عبور را وارد کنید.";
-        else if (form.password.length < 8) next.password = "رمز عبور باید حداقل ۸ کاراکتر باشد.";
+        else if (form.password.length < 8) next.password = "رمز عبور باید دست‌کم ۸ کاراکتر باشد.";
 
         return next;
     }
@@ -83,19 +85,26 @@ export default function SignupPage() {
         setServerError("");
 
         try {
-            // بکند همان لحظه توکن هم برمی‌گرداند و registerUser آن را ذخیره می‌کند،
-            // پس کاربر بعد از ثبت‌نام وارد شده است.
+            // The backend returns tokens too and registerUser stores them,
+            // so the user is logged in right after signing up.
             await registerUser({
-                username: form.username.trim(),
-                email: form.email.trim(),
+                first_name: form.first_name.trim(),
+                last_name: form.last_name.trim(),
+                // Only the chosen method is sent; the other one is null
+                email: method === "email" ? form.email.trim() : null,
+                phone: method === "phone" ? form.phone.trim() : null,
                 password: form.password,
             });
             setSuccess(true);
         } catch (err) {
             const status = err.response?.status;
-            if (status === 400 && err.response.data) {
-                // خطاها کنار همان فیلدی که مشکل دارد نشان داده می‌شوند
-                setErrors(translateServerErrors(err.response.data));
+            const data = err.response?.data;
+            if (status === 400 && data) {
+                // The backend's Persian messages, next to the field they belong to
+                setErrors(fieldErrors(data));
+                // Errors not tied to one field (e.g. "enter an email or phone")
+                const general = Array.isArray(data) ? data : data.non_field_errors;
+                if (general?.length) setServerError(general.join(" "));
             } else {
                 setServerError("ارتباط با سرور برقرار نشد. دوباره تلاش کنید.");
             }
@@ -104,15 +113,23 @@ export default function SignupPage() {
         }
     }
 
-    // کلاس‌های مشترک inputها؛ فقط رنگ حاشیه بسته به خطا عوض می‌شود
+    // Shared input classes; only the border color changes with an error
     function inputClass(field, extra = "") {
-        return `h-12 w-full rounded-xl border bg-white text-left text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-600/30 ${extra} ${errors[field]
+        return `h-12 w-full rounded-xl border bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-600/30 ${extra} ${errors[field]
                 ? "border-red-400 focus:border-red-500"
                 : "border-gray-300 focus:border-blue-600"
             }`;
     }
 
-    // ── حالت موفق: به‌جای فرم، پیام تأیید نمایش داده می‌شود ──
+    function errorText(field) {
+        return errors[field] ? (
+            <p id={`${field}-error`} className="mt-1.5 text-xs text-red-600">
+                {errors[field]}
+            </p>
+        ) : null;
+    }
+
+    // ── Success: a confirmation replaces the form ──
     if (success) {
         return (
             <div dir="rtl" className="min-h-screen bg-gray-100 px-4 py-10">
@@ -122,17 +139,20 @@ export default function SignupPage() {
                     </div>
                     <h1 className="text-xl font-bold text-gray-900">حساب شما ساخته شد</h1>
                     <p className="mt-2 text-sm text-gray-500">
-                        حالا می‌توانید با نام کاربری{" "}
+                        {form.first_name.trim()} عزیز، خوش آمدید. شما وارد حساب خود شده‌اید.
+                    </p>
+                    <p className="mt-1 text-sm text-gray-500">
+                        دفعه‌های بعد با{" "}
                         <span dir="ltr" className="font-semibold text-gray-700">
-                            {form.username.trim()}
+                            {method === "email" ? form.email.trim() : form.phone.trim()}
                         </span>{" "}
-                        وارد شوید.
+                        و رمز عبورتان وارد شوید.
                     </p>
                     <Link
-                        to="/login"
+                        to="/"
                         className="mt-6 flex h-12 w-full items-center justify-center rounded-xl bg-blue-600 font-semibold text-white shadow-md shadow-blue-600/20 transition-colors hover:bg-blue-700 focus:outline-none focus-visible:ring-4 focus-visible:ring-blue-600/30"
                     >
-                        رفتن به صفحه ورود
+                        رفتن به صفحه اصلی
                     </Link>
                 </div>
             </div>
@@ -142,13 +162,13 @@ export default function SignupPage() {
     return (
         <div dir="rtl" className="min-h-screen bg-gray-100 px-4 py-10">
             <div className="mx-auto w-full max-w-sm">
-                {/* ── سربرگ آبی، مثل صفحه ورود ── */}
+                {/* ── Blue header, like the login page ── */}
                 <div className="relative overflow-hidden rounded-3xl bg-blue-600 px-6 pb-14 pt-8 text-white">
                     <div className="absolute -left-6 top-4 h-24 w-24 rounded-full border-4 border-white/10" />
                     <div className="absolute left-16 -top-8 h-20 w-20 rounded-full border-4 border-white/10" />
 
                     <div className="relative">
-                        {/* لوگوی سایت؛ پس‌زمینه لوگو روشن است، پس روی کارت سفید قرار می‌گیرد */}
+                        {/* The logo has a light background, so it sits on a white card */}
                         <Link
                             to="/"
                             className="mb-4 inline-flex rounded-2xl bg-[#f9fcfc] px-3 py-1.5 shadow-sm"
@@ -177,59 +197,117 @@ export default function SignupPage() {
                         </div>
                     )}
 
-                    {/* ── نام کاربری ── */}
-                    <div>
-                        <label htmlFor="username" className="mb-1.5 block text-sm font-medium text-gray-700">
-                            نام کاربری
-                        </label>
-                        <input
-                            id="username"
-                            name="username"
-                            type="text"
-                            dir="ltr"
-                            autoComplete="username"
-                            autoCapitalize="none"
-                            value={form.username}
-                            onChange={handleChange}
-                            aria-invalid={Boolean(errors.username)}
-                            aria-describedby={errors.username ? "username-error" : undefined}
-                            placeholder="username"
-                            className={inputClass("username", "px-4")}
-                        />
-                        {errors.username && (
-                            <p id="username-error" className="mt-1.5 text-xs text-red-600">
-                                {errors.username}
-                            </p>
-                        )}
+                    {/* ── First and last name, side by side ── */}
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label htmlFor="first_name" className="mb-1.5 block text-sm font-medium text-gray-700">
+                                نام
+                            </label>
+                            <input
+                                id="first_name"
+                                name="first_name"
+                                type="text"
+                                autoComplete="given-name"
+                                value={form.first_name}
+                                onChange={handleChange}
+                                aria-invalid={Boolean(errors.first_name)}
+                                aria-describedby={errors.first_name ? "first_name-error" : undefined}
+                                className={inputClass("first_name", "px-4")}
+                            />
+                            {errorText("first_name")}
+                        </div>
+                        <div>
+                            <label htmlFor="last_name" className="mb-1.5 block text-sm font-medium text-gray-700">
+                                نام خانوادگی
+                            </label>
+                            <input
+                                id="last_name"
+                                name="last_name"
+                                type="text"
+                                autoComplete="family-name"
+                                value={form.last_name}
+                                onChange={handleChange}
+                                aria-invalid={Boolean(errors.last_name)}
+                                aria-describedby={errors.last_name ? "last_name-error" : undefined}
+                                className={inputClass("last_name", "px-4")}
+                            />
+                            {errorText("last_name")}
+                        </div>
                     </div>
 
-                    {/* ── ایمیل ── */}
+                    {/* ── Email or phone: the user picks one ── */}
                     <div>
-                        <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-gray-700">
-                            ایمیل
-                        </label>
-                        <input
-                            id="email"
-                            name="email"
-                            type="email"
-                            dir="ltr"
-                            autoComplete="email"
-                            inputMode="email" // در موبایل کیبورد مخصوص ایمیل (با @) باز می‌شود
-                            value={form.email}
-                            onChange={handleChange}
-                            aria-invalid={Boolean(errors.email)}
-                            aria-describedby={errors.email ? "email-error" : undefined}
-                            placeholder="name@example.com"
-                            className={inputClass("email", "px-4")}
-                        />
-                        {errors.email && (
-                            <p id="email-error" className="mt-1.5 text-xs text-red-600">
-                                {errors.email}
-                            </p>
-                        )}
+                        <span id="method-label" className="mb-1.5 block text-sm font-medium text-gray-700">
+                            ثبت‌نام
+                        </span>
+                        <div
+                            role="radiogroup"
+                            aria-labelledby="method-label"
+                            className="grid grid-cols-2 gap-1 rounded-xl bg-gray-100 p-1"
+                        >
+                            {METHODS.map((m) => (
+                                <button
+                                    key={m.value}
+                                    type="button"
+                                    role="radio"
+                                    aria-checked={method === m.value}
+                                    onClick={() => changeMethod(m.value)}
+                                    className={`h-10 rounded-lg text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600/40 ${method === m.value
+                                            ? "bg-white text-blue-600 shadow-sm"
+                                            : "text-gray-500 hover:text-gray-700"
+                                        }`}
+                                >
+                                    {m.label}
+                                </button>
+                            ))}
+                        </div>
                     </div>
 
-                    {/* ── رمز عبور ── */}
+                    {method === "email" ? (
+                        <div>
+                            <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-gray-700">
+                                ایمیل
+                            </label>
+                            <input
+                                id="email"
+                                name="email"
+                                type="email"
+                                dir="ltr"
+                                autoComplete="email"
+                                inputMode="email" // mobile keyboards show the @ key
+                                value={form.email}
+                                onChange={handleChange}
+                                aria-invalid={Boolean(errors.email)}
+                                aria-describedby={errors.email ? "email-error" : undefined}
+                                placeholder="name@example.com"
+                                className={inputClass("email", "px-4 text-left")}
+                            />
+                            {errorText("email")}
+                        </div>
+                    ) : (
+                        <div>
+                            <label htmlFor="phone" className="mb-1.5 block text-sm font-medium text-gray-700">
+                                شماره موبایل
+                            </label>
+                            <input
+                                id="phone"
+                                name="phone"
+                                type="tel"
+                                dir="ltr"
+                                autoComplete="tel"
+                                inputMode="tel" // mobile keyboards show the number pad
+                                value={form.phone}
+                                onChange={handleChange}
+                                aria-invalid={Boolean(errors.phone)}
+                                aria-describedby={errors.phone ? "phone-error" : undefined}
+                                placeholder="09123456789"
+                                className={inputClass("phone", "px-4 text-left")}
+                            />
+                            {errorText("phone")}
+                        </div>
+                    )}
+
+                    {/* ── Password ── */}
                     <div>
                         <label htmlFor="password" className="mb-1.5 block text-sm font-medium text-gray-700">
                             رمز عبور
@@ -240,13 +318,13 @@ export default function SignupPage() {
                                 name="password"
                                 type={showPassword ? "text" : "password"}
                                 dir="ltr"
-                                autoComplete="new-password" // به مرورگر می‌گوید رمز جدید پیشنهاد دهد
+                                autoComplete="new-password" // tells the browser to suggest a new password
                                 value={form.password}
                                 onChange={handleChange}
                                 aria-invalid={Boolean(errors.password)}
                                 aria-describedby="password-hint"
                                 placeholder="••••••••"
-                                className={inputClass("password", "pl-4 pr-12")}
+                                className={inputClass("password", "pl-4 pr-12 text-left")}
                             />
                             <button
                                 type="button"
@@ -257,7 +335,7 @@ export default function SignupPage() {
                                 {showPassword ? "🙈" : "👁️"}
                             </button>
                         </div>
-                        {/* راهنما همیشه دیده می‌شود؛ اگر خطا باشد، متن خطا جایش را می‌گیرد */}
+                        {/* The hint is always shown; an error replaces it */}
                         <p
                             id="password-hint"
                             className={`mt-1.5 text-xs ${errors.password ? "text-red-600" : "text-gray-500"}`}

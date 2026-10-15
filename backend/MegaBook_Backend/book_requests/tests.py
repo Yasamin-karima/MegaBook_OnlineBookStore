@@ -20,7 +20,7 @@ SUCCESS = {"result": "requested", "message": "درخواست شما ثبت شد"
 
 def make_user(name):
     return get_user_model().objects.create_user(
-        username=name, email=f"{name}@example.com", password="Str0ng-Passw0rd!"
+        first_name=name, last_name="Test", email=f"{name}@example.com", password="Str0ng-Passw0rd!"
     )
 
 
@@ -238,7 +238,7 @@ class ConcurrentRequestTests(TransactionTestCase):
 class AdminTests(TestCase):
     def setUp(self):
         self.admin = get_user_model().objects.create_superuser(
-            username="boss", email="boss@example.com", password="Str0ng-Passw0rd!"
+            first_name="boss", last_name="Test", email="boss@example.com", password="Str0ng-Passw0rd!"
         )
         self.client.force_login(self.admin)
         self.book_request = BookRequest.objects.create(isbn=ISBN, title="سمفونی مردگان")

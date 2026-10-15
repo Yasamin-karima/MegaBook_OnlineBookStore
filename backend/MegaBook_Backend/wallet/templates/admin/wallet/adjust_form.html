@@ -1,0 +1,13 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<p>موجودی فعلی: <strong>{{ balance }}</strong></p>
+<p>اصلاح دستی یک تراکنش تازه است؛ هیچ تراکنش قبلی ویرایش یا حذف نمی‌شود.</p>
+
+<form method="post">
+  {% csrf_token %}
+  {{ form.as_p }}
+  <input type="submit" value="ثبت اصلاح" class="default">
+  <a href="{% url 'admin:wallet_wallet_change' wallet.pk %}" class="button cancel-link">انصراف</a>
+</form>
+{% endblock %}

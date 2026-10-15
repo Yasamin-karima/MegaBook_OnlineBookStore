@@ -2,7 +2,7 @@ import axios from 'axios';
 
 const BASE_URL = 'http://localhost:8000';
 
-// آدرس بکند جنگو. مسیرها کامل نوشته می‌شوند، مثلاً '/accounts/login/' یا '/api/list/'
+// آدرس بکند جنگو. مسیرها کامل نوشته می‌شوند، مثلاً '/accounts/login/' یا '/catalog/books/'
 const apiClient = axios.create({
   baseURL: BASE_URL,
 });

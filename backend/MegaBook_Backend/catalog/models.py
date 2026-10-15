@@ -1,12 +1,20 @@
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import models
+from django.db.models import F, Q
+
+from MegaBook_Backend.private_files import RandomName, private_storage
 
 pdf_only = FileExtensionValidator(allowed_extensions=["pdf"])
 
 # پیام‌های «این شابک در مگابوک هست»، مشترک بین ساخت کتاب، جستجوی شابک و ثبت درخواست
 BOOK_EXISTS_APPROVED = "کتابی با این شابک قبلاً ثبت شده است."
 BOOK_EXISTS_PENDING = "این کتاب بارگذاری شده و در انتظار بررسی است."
+
+# Money rules for an approved book (Book.apply_money_rules)
+APPROVED_NEEDS_PRICE = "برای تأیید کتاب، قیمت فروش را تعیین کنید."
+PRICE_BELOW_SELLER_SHARE = "قیمت فروش نمی‌تواند کمتر از سهم بارگذارنده باشد."
 
 
 class Person(models.Model):
@@ -93,11 +101,22 @@ class Book(models.Model):
     sample_file = models.FileField(
         upload_to="books/samples/", blank=True, validators=[pdf_only]
     )
-    book_file = models.FileField(upload_to="books/files/", validators=[pdf_only])
+    # The paid content: in private storage (outside MEDIA_ROOT, no URL) under a random
+    # name, served only by BookFileView after a permission check (Book.can_download_file)
+    book_file = models.FileField(
+        upload_to=RandomName("books/files"), storage=private_storage, validators=[pdf_only]
+    )
 
     # --- فروش ---
-    # به تومان؛ صفر یعنی رایگان
-    price = models.PositiveIntegerField()
+    # Two money values, both in toman. MegaBook's commission is NOT stored: it is
+    # always price - seller_share (see the commission property and DECISIONS 3.6).
+    # Store price buyers pay; 0 means free. NULL means "not set yet": allowed only
+    # before approval, because the price is decided when the admin approves.
+    price = models.PositiveIntegerField(null=True, blank=True)
+    # What the uploader receives per sale. Private: never in a public API response,
+    # or any buyer could compute the commission (like book_file, DECISIONS 3.8).
+    # 0 for books uploaded by an admin (the whole price goes to MegaBook) and free books.
+    seller_share = models.PositiveIntegerField(default=0)
 
     # --- گردش کار ---
     status = models.CharField(
@@ -122,10 +141,54 @@ class Book(models.Model):
                 name="unique_isbn_unless_rejected",
                 violation_error_message="کتاب دیگری با این شابک در مگابوک هست (تایید شده یا در انتظار بررسی).",
             ),
+            # The last layer of apply_money_rules, in the database itself: QuerySet.update()
+            # (e.g. a bulk "approve" action) and raw SQL skip save(). An approved book
+            # has a price, and the price covers the uploader's share.
+            models.CheckConstraint(
+                condition=~Q(status="approved") | (Q(price__isnull=False) & Q(price__gte=F("seller_share"))),
+                name="approved_book_price_covers_seller_share",
+                violation_error_message=PRICE_BELOW_SELLER_SHARE,
+            ),
         ]
 
     def __str__(self):
         return self.title
+
+    @property
+    def commission(self):
+        """MegaBook's share of each sale in toman, or None while the price isn't set.
+
+        Derived, never stored, so it can't drift out of sync with the two numbers it
+        comes from. When a sale happens, the commission is recorded as a real ledger
+        entry in MegaBook's wallet (DECISIONS 6.1); this is only for display.
+        """
+        if self.price is None:
+            return None
+        return self.price - self.seller_share
+
+    def apply_money_rules(self):
+        """An approved book must have a price, and price >= seller_share.
+
+        Called from both clean() and save(), like BookRequest.apply_status_rules
+        (DECISIONS 5.5): Django calls clean() only from forms (including the admin),
+        never on a plain save(). Pending and rejected books may have no price.
+        """
+        if self.status != self.Status.APPROVED:
+            return
+        if self.price is None:
+            raise ValidationError({"price": APPROVED_NEEDS_PRICE})
+        if self.price < self.seller_share:
+            raise ValidationError({"price": PRICE_BELOW_SELLER_SHARE})
+
+    def clean(self):
+        # Here so the admin form shows the error next to the price field
+        super().clean()
+        self.apply_money_rules()
+
+    def save(self, *args, **kwargs):
+        # Here so the rule holds however the book is saved: admin, API, seed, shell
+        self.apply_money_rules()
+        super().save(*args, **kwargs)
 
     @classmethod
     def active_for_isbn(cls, isbn):
@@ -136,6 +199,16 @@ class Book(models.Model):
         همه از همین استفاده می‌کنند تا «این کتاب در مگابوک هست؟» همه‌جا یک معنا داشته باشد.
         """
         return cls.objects.exclude(status=cls.Status.REJECTED).filter(isbn=isbn).only("id", "status").first()
+
+    def can_download_file(self, user):
+        """Who may download the full file: the uploader and admins.
+
+        When checkout exists, buyers of the book are added here; every download path
+        (the signed-link endpoint and the download view) asks this one method.
+        """
+        if user is None or not user.is_authenticated or not user.is_active:
+            return False
+        return user.is_staff or self.uploaded_by_id == user.pk
 
     @property
     def file_size(self):

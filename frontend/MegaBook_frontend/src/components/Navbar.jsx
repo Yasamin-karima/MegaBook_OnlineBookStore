@@ -2,8 +2,10 @@ import React from 'react'
 import { Link } from 'react-router-dom'
 import { LuBell } from 'react-icons/lu'
 import logo from '../assets/logo.svg'
+import { isLoggedIn } from '../api/auth'
 
 const Navbar = () => {
+    const loggedIn = isLoggedIn()
     return (
         <nav class="flex z-10 justify-between fixed inset-x-0 top-0 h-16 bg-[#f9fcfc] rounded-3xl">
             <div className="flex items-center pr-4">
@@ -13,8 +15,12 @@ const Navbar = () => {
                 <a href='#'>
                     <LuBell className='text-2xl text-[#4c687c]' />
                 </a>
-                <Link to='/login' className='bg-[#4c687c] rounded-2xl w-12 h-8 flex justify-center text-white'>
-                    ورود
+                {/* Logged in: link to the account page instead of the login page */}
+                <Link
+                    to={loggedIn ? '/account' : '/login'}
+                    className='bg-[#4c687c] rounded-2xl w-12 h-8 flex justify-center text-white'
+                >
+                    {loggedIn ? 'حساب' : 'ورود'}
                 </Link>
             </div>
         </nav>

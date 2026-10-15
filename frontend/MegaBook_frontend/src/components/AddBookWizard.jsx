@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { getCurrentUser } from "../api/auth";
 import { createBook, getCategories, lookupIsbn } from "../api/catalog";
 import { LANGUAGES, formatFileSize, languageName, toFaNumber, toFaYear } from "../utils/format";
 
@@ -41,8 +42,19 @@ const EMPTY_FORM = {
   cover_url: "",
   sample_file: null,
   book_file: null,
+  // The money field (step 6). Only one is used, depending on who uploads (moneyFieldFor):
+  // seller_share for regular users, price for admins. Both are here so server errors
+  // under either name land under the field.
+  seller_share: "",
   price: "",
 };
+
+// Regular user: the amount they want per sale (seller_share); the store price is set
+// by MegaBook on approval. Admin: the store price itself; their books need no review and
+// the whole price goes to MegaBook (the backend sets seller_share to 0).
+function moneyFieldFor(isStaff) {
+  return isStaff ? "price" : "seller_share";
+}
 
 // هر مرحله فیلدهای مرتبط به هم را دارد. label کوتاه برای نوار مراحل است، title برای عنوان مرحله.
 // fields برای دو کار لازم است: اعتبارسنجی همان مرحله، و پیدا کردن مرحله‌ای که خطای سرور در آن است.
@@ -56,7 +68,7 @@ const STEPS = [
   },
   { label: "دسته‌بندی", title: "توضیحات و دسته‌بندی", fields: ["description", "category", "tags"] },
   { label: "فایل‌ها", title: "جلد و فایل‌ها", fields: ["cover", "book_file", "sample_file"] },
-  { label: "ارسال", title: "قیمت و ارسال", fields: ["price", "accepted"] },
+  { label: "ارسال", title: "مبلغ و ارسال", fields: ["seller_share", "price", "accepted"] },
 ];
 
 /* ---------- توابع کمکی ---------- */
@@ -84,7 +96,7 @@ function isCoverImage(file) {
 // همه‌ی خطاهای فرم؛ validateStep فقط خطاهای یک مرحله را از این بیرون می‌کشد
 // isbnTaken: پیام «این کتاب در مگابوک هست» (یا رشته‌ی خالی)؛ تا شابک عوض نشود، نمی‌شود جلو رفت
 // (سرور هم شابک تکراری را رد می‌کند، بهتر است کاربر همین اول بفهمد نه بعد از پنج مرحله)
-function validateAll(form, accepted, isbnTaken = "") {
+function validateAll(form, accepted, isbnTaken = "", moneyField = "seller_share") {
   const errors = {};
   if (!form.title.trim()) errors.title = "عنوان کتاب را وارد کنید.";
   if (form.authors.length === 0) errors.authors = "دست‌کم نام یک نویسنده را وارد کنید.";
@@ -97,13 +109,18 @@ function validateAll(form, accepted, isbnTaken = "") {
   // جلد: یا فایل خود کاربر، یا جلدی که Open Library پیدا کرد
   if (!form.cover && !form.cover_url) errors.cover = "تصویر جلد را انتخاب کنید.";
   if (!form.book_file) errors.book_file = "فایل PDF کتاب را انتخاب کنید.";
-  if (form.price === "") errors.price = "قیمت را وارد کنید. برای کتاب رایگان صفر بنویسید.";
+  if (form[moneyField] === "") {
+    errors[moneyField] =
+      moneyField === "price"
+        ? "قیمت فروش را وارد کنید. برای کتاب رایگان صفر بنویسید."
+        : "مبلغی را که برای هر فروش می‌خواهید دریافت کنید وارد کنید. اگر پولی نمی‌خواهید، صفر بنویسید.";
+  }
   if (!accepted) errors.accepted = "برای ارسال، تایید مالکیت لازم است.";
   return errors;
 }
 
-function validateStep(index, form, accepted, isbnTaken = "") {
-  const all = validateAll(form, accepted, isbnTaken);
+function validateStep(index, form, accepted, isbnTaken = "", moneyField = "seller_share") {
+  const all = validateAll(form, accepted, isbnTaken, moneyField);
   const result = {};
   STEPS[index].fields.forEach((name) => {
     if (all[name]) result[name] = all[name];
@@ -157,13 +174,14 @@ function clearFetched(form, fetched) {
 }
 
 // چون فایل داریم، داده به‌جای JSON در قالب FormData (multipart) فرستاده می‌شود
-function buildFormData(form) {
+function buildFormData(form, moneyField) {
   const data = new FormData();
 
   data.append("title", form.title.trim());
   data.append("isbn", form.isbn);
   data.append("language", form.language);
-  data.append("price", form.price);
+  // Only the field for this uploader's role; the backend ignores the other one anyway
+  data.append(moneyField, form[moneyField]);
 
   // برای لیست‌ها، یک کلید چند بار تکرار می‌شود
   form.authors.forEach((name) => data.append("authors", name));
@@ -396,6 +414,9 @@ export default function AddBookWizard({ onBack }) {
   const [maxReached, setMaxReached] = useState(0);
   const [coverPreview, setCoverPreview] = useState("");
   const [categories, setCategories] = useState([]);
+  // Admin or regular user decides the money field; until known, assume a regular user
+  const [isStaff, setIsStaff] = useState(false);
+  const moneyField = moneyFieldFor(isStaff);
 
   // --- دریافت اطلاعات از روی شابک ---
   const [lookupLoading, setLookupLoading] = useState(false);
@@ -423,6 +444,10 @@ export default function AddBookWizard({ onBack }) {
     getCategories()
       .then(setCategories)
       .catch(() => setCategories([]));
+    // Only the form's wording depends on this; the backend decides by the real user
+    getCurrentUser()
+      .then((user) => setIsStaff(Boolean(user.is_staff)))
+      .catch(() => setIsStaff(false));
   }, []);
 
   // آدرس موقت پیش‌نمایش جلد، وقتی کامپوننت بسته شود آزاد می‌شود
@@ -594,7 +619,7 @@ export default function AddBookWizard({ onBack }) {
   // اگر یکی ایراد داشت، همان‌جا می‌مانیم و خطاها را نشان می‌دهیم.
   const goTo = (target) => {
     for (let i = step; i < target; i++) {
-      const found = validateStep(i, form, accepted, isbnTaken);
+      const found = validateStep(i, form, accepted, isbnTaken, moneyField);
       const firstInvalid = Object.keys(found)[0];
       if (firstInvalid) {
         focusRequest.current = { field: firstInvalid };
@@ -627,7 +652,7 @@ export default function AddBookWizard({ onBack }) {
   const handleSubmit = async () => {
     // همه‌ی مرحله‌ها را دوباره چک می‌کنیم؛ ممکن است کاربر برگشته و چیزی را پاک کرده باشد
     for (let i = 0; i < STEPS.length; i++) {
-      const found = validateStep(i, form, accepted, isbnTaken);
+      const found = validateStep(i, form, accepted, isbnTaken, moneyField);
       const firstInvalid = Object.keys(found)[0];
       if (firstInvalid) {
         focusRequest.current = { field: firstInvalid };
@@ -639,7 +664,7 @@ export default function AddBookWizard({ onBack }) {
 
     setStatus("submitting");
     try {
-      await createBook(buildFormData(form));
+      await createBook(buildFormData(form, moneyField));
       resetAll();
       setStatus("success");
     } catch (err) {
@@ -705,8 +730,13 @@ export default function AddBookWizard({ onBack }) {
           <div className="abw-success-icon" aria-hidden="true">
             ✅
           </div>
-          <h2>کتاب برای بررسی ارسال شد</h2>
-          <p>پس از تایید مدیر، کتاب در فروشگاه نمایش داده می‌شود.</p>
+          {/* Admin uploads are approved right away; regular uploads wait for review */}
+          <h2>{isStaff ? "کتاب در فروشگاه منتشر شد" : "کتاب برای بررسی ارسال شد"}</h2>
+          <p>
+            {isStaff
+              ? "کتاب همین حالا در فروشگاه نمایش داده می‌شود."
+              : "مدیر مگابوک کتاب و مبلغ درخواستی شما را بررسی می‌کند و پس از تایید، کتاب با قیمتی که تعیین می‌شود در فروشگاه نمایش داده می‌شود."}
+          </p>
           <button type="button" className="abw-primary" onClick={() => setStatus("idle")}>
             افزودن کتاب دیگر
           </button>
@@ -1064,31 +1094,45 @@ export default function AddBookWizard({ onBack }) {
             <section className="abw-section">
               <div className="abw-card">
                 <div className="abw-price-row">
-                  <label className="abw-price-label" htmlFor="abw-price">
-                    <strong>قیمت فروش</strong>
-                    <small>مدیر این مبلغ را بررسی می‌کند</small>
+                  <label className="abw-price-label" htmlFor={`abw-${moneyField}`}>
+                    {isStaff ? (
+                      <>
+                        <strong>قیمت فروش در فروشگاه</strong>
+                        <small>کل مبلغ فروش به حساب مگابوک می‌رود.</small>
+                      </>
+                    ) : (
+                      <>
+                        <strong>مبلغی که برای هر فروش می‌خواهید دریافت کنید</strong>
+                        <small>
+                          مدیر مگابوک این مبلغ را بررسی می‌کند. قیمت فروش در فروشگاه را مگابوک تعیین
+                          می‌کند.
+                        </small>
+                      </>
+                    )}
                   </label>
-                  <div className={`abw-price-input ${errors.price ? "abw-invalid" : ""}`}>
+                  <div className={`abw-price-input ${errors[moneyField] ? "abw-invalid" : ""}`}>
                     <input
-                      id="abw-price"
+                      id={`abw-${moneyField}`}
                       inputMode="numeric"
-                      value={form.price}
+                      value={form[moneyField]}
                       placeholder="0"
-                      onChange={(e) => setField("price", onlyDigits(e.target.value).slice(0, 9))}
+                      onChange={(e) => setField(moneyField, onlyDigits(e.target.value).slice(0, 9))}
                     />
                     <span>تومان</span>
                   </div>
                 </div>
-                {form.price !== "" && !errors.price && (
+                {form[moneyField] !== "" && !errors[moneyField] && (
                   <p className="abw-hint">
-                    {Number(form.price) === 0
-                      ? "این کتاب رایگان عرضه می‌شود."
-                      : `${toFaNumber(form.price)} تومان`}
+                    {Number(form[moneyField]) > 0
+                      ? `${toFaNumber(form[moneyField])} تومان`
+                      : isStaff
+                        ? "این کتاب رایگان عرضه می‌شود."
+                        : "برای فروش این کتاب مبلغی دریافت نمی‌کنید."}
                   </p>
                 )}
-                {errors.price && (
+                {errors[moneyField] && (
                   <p className="abw-error" role="alert">
-                    {errors.price}
+                    {errors[moneyField]}
                   </p>
                 )}
               </div>
@@ -1154,7 +1198,7 @@ export default function AddBookWizard({ onBack }) {
                 disabled={status === "submitting"}
                 onClick={handleSubmit}
               >
-                {status === "submitting" ? "در حال ارسال…" : "ارسال برای بررسی"}
+                {status === "submitting" ? "در حال ارسال…" : isStaff ? "انتشار در فروشگاه" : "ارسال برای بررسی"}
               </button>
             ) : (
               <button type="button" className="abw-primary" onClick={() => goTo(step + 1)}>

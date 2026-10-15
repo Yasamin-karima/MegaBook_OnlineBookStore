@@ -6,7 +6,13 @@
 چند بار اجرا کردنش امن است:
 - کتابی که شابکش از قبل وجود دارد، رد می‌شود (نه تکراری ساخته می‌شود، نه تغییر می‌کند).
 - Person، Publisher، Category و Tag با نامشان پیدا می‌شوند و فقط اگر نبودند ساخته می‌شوند.
+- The sample uploader (SAMPLE_UPLOADER_EMAIL) is found by email and created only if missing.
 - هیچ داده‌ی موجودی ویرایش یا حذف نمی‌شود.
+
+Two uploaders, so the sample data shows both money cases:
+- the first superuser, for books marked "uploader": "admin" (seller_share is always 0);
+- a regular "sample uploader" account for the rest (they get a seller_share). It has an
+  unusable password, so nobody can log in with it; it exists only to own sample books.
 
 فایل‌ها از اینترنت دانلود نمی‌شوند: جلد با Pillow ساخته می‌شود (رنگ ساده + عنوان)
 و فایل کتاب و نمونه یک PDF کوچک است که فقط می‌گوید فایل نمونه است.
@@ -17,6 +23,7 @@ import textwrap
 from pathlib import Path
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.hashers import make_password
 from django.core.files.base import ContentFile
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
@@ -25,6 +32,8 @@ from PIL import Image, ImageDraw, ImageFont
 from catalog.management.seed_data import CATEGORIES, SAMPLE_BOOKS
 from catalog.models import Book, Category, Person, Publisher, Tag
 from catalog.isbn import isbn13_is_valid
+
+SAMPLE_UPLOADER_EMAIL = "sample-uploader@megabook.invalid"  # .invalid: a reserved domain, never real
 
 FONT_PATH = Path(__file__).resolve().parent.parent / "fonts" / "Vazirmatn-Bold.ttf"
 COVER_SIZE = (600, 900)
@@ -228,9 +237,9 @@ class Command(BaseCommand):
     help = "Adds the sample books from catalog/management/seed_data.py. Safe to run more than once."
 
     def handle(self, *args, **options):
-        uploader = get_user_model().objects.filter(is_superuser=True).order_by("id").first()
-        if uploader is None:
-            # عمداً کاربر نمی‌سازیم؛ ساختن کاربر و رمز تصمیم خود تیم است
+        admin = get_user_model().objects.filter(is_superuser=True).order_by("id").first()
+        if admin is None:
+            # عمداً superuser نمی‌سازیم؛ ساختن حساب مدیر و رمزش تصمیم خود تیم است
             raise CommandError(
                 "No superuser found. Create one first with: "
                 "docker compose exec backend python manage.py createsuperuser"
@@ -238,6 +247,7 @@ class Command(BaseCommand):
 
         self.check_data()
         self.created_names = {"categories": [], "people": [], "publishers": [], "tags": []}
+        uploaders = {"admin": admin, "user": self.sample_uploader()}
 
         for name in CATEGORIES:
             self.get_or_create(Category, "categories", name)
@@ -247,10 +257,25 @@ class Command(BaseCommand):
             if Book.objects.filter(isbn=data["isbn"]).exists():
                 results.append((data, "skipped (ISBN already exists)"))
                 continue
-            self.create_book(data, uploader)
+            self.create_book(data, uploaders[data.get("uploader", "user")])
             results.append((data, "created"))
 
-        self.report(results, uploader)
+        self.report(results, uploaders)
+
+    def sample_uploader(self):
+        """The regular (non-staff) account that owns most sample books; created once."""
+        user, created = get_user_model().objects.get_or_create(
+            email=SAMPLE_UPLOADER_EMAIL,
+            defaults={
+                "first_name": "بارگذارنده",
+                "last_name": "نمونه",
+                # make_password(None) = an unusable password: no one can log in as this user
+                "password": make_password(None),
+            },
+        )
+        if created:
+            self.stdout.write(self.style.SUCCESS(f"Created sample uploader: {user}"))
+        return user
 
     def check_data(self):
         """قبل از نوشتن هر چیزی، داده را چک می‌کنیم تا اشتباه تایپی نیمه‌کاره ذخیره نشود."""
@@ -263,6 +288,20 @@ class Command(BaseCommand):
                 raise CommandError(f"Unknown category for {label}: {data['category']}")
             if data["status"] not in valid_status:
                 raise CommandError(f"Unknown status for {label}: {data['status']}")
+            self.check_money(data, label)
+
+    def check_money(self, data, label):
+        # The same rules the model enforces, checked up front so a typo stops the
+        # command before anything is written instead of halfway through
+        if data.get("uploader", "user") not in ("admin", "user"):
+            raise CommandError(f"Unknown uploader for {label}: {data['uploader']}")
+        if data.get("uploader") == "admin" and data["seller_share"] != 0:
+            raise CommandError(f"Admin-uploaded books have seller_share 0: {label}")
+        if data["status"] == "approved":
+            if data["price"] is None:
+                raise CommandError(f"Approved book without a price: {label}")
+            if data["price"] < data["seller_share"]:
+                raise CommandError(f"price is less than seller_share: {label}")
 
     def get_or_create(self, model, bucket, name):
         obj, created = model.objects.get_or_create(name=name)
@@ -286,6 +325,7 @@ class Command(BaseCommand):
             publication_year=data["publication_year"],
             edition=data.get("edition", ""),
             price=data["price"],
+            seller_share=data["seller_share"],
             status=data["status"],
             uploaded_by=uploader,
             # ContentFile فایلِ در حافظه است؛ Django هنگام ذخیره آن را در MEDIA_ROOT/upload_to می‌نویسد
@@ -301,13 +341,20 @@ class Command(BaseCommand):
         book.tags.set([self.get_or_create(Tag, "tags", n) for n in data["tags"]])
         return book
 
-    def report(self, results, uploader):
-        self.stdout.write(f"\nUploader: {uploader.username} (id={uploader.id})\n")
-        self.stdout.write(f"{'ISBN':<15}{'STATUS':<10}{'RESULT':<32}TITLE")
-        self.stdout.write("-" * 90)
+    def report(self, results, uploaders):
+        self.stdout.write("")
+        for key, user in uploaders.items():
+            self.stdout.write(f"Uploader ({key}): {user} (id={user.id})")
+        self.stdout.write("")
+        self.stdout.write(f"{'ISBN':<15}{'STATUS':<10}{'UPLOADER':<10}{'PRICE':>9}{'SHARE':>9}  {'RESULT':<32}TITLE")
+        self.stdout.write("-" * 110)
         for data, result in results:
             style = self.style.SUCCESS if result == "created" else self.style.WARNING
-            self.stdout.write(f"{data['isbn']:<15}{data['status']:<10}" + style(f"{result:<32}") + data["title"])
+            price = "-" if data["price"] is None else data["price"]
+            self.stdout.write(
+                f"{data['isbn']:<15}{data['status']:<10}{data.get('uploader', 'user'):<10}"
+                f"{price:>9}{data['seller_share']:>9}  " + style(f"{result:<32}") + data["title"]
+            )
 
         created = sum(1 for _, r in results if r == "created")
         self.stdout.write("")

@@ -44,3 +44,11 @@ export async function createBook(formData) {
   const response = await apiClient.post('/catalog/books/', formData);
   return response.data;
 }
+
+// The full book file is private (uploader and admins; buyers after checkout).
+// => { url, expires_in }: a signed link valid for a few minutes, usable in a plain
+// <a href> or window.open (the file view needs no login header). 404 if not allowed.
+export async function getBookFileLink(id) {
+  const response = await apiClient.get(`/catalog/books/${id}/file-link/`);
+  return response.data;
+}

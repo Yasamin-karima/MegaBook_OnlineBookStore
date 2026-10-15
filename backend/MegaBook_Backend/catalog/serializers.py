@@ -129,17 +129,33 @@ class BookCreateSerializer(serializers.ModelSerializer):
     )
     sample_file = serializers.FileField(required=False, error_messages=messages())
 
+    # The money field depends on who uploads (see __init__):
+    #   regular user -> seller_share: the amount they want per sale (a proposal the admin
+    #                   may change on approval); price stays empty until approval.
+    #   admin        -> price: the store price; seller_share is always 0 and the book is
+    #                   approved right away (create()).
+    # Both appear in the response, which only ever goes to the uploader themself.
+    seller_share = serializers.IntegerField(
+        min_value=0,
+        max_value=2_147_483_647,  # largest PositiveIntegerField value
+        error_messages=messages(
+            required="مبلغی را که برای هر فروش می‌خواهید دریافت کنید وارد کنید. اگر پولی نمی‌خواهید، صفر بنویسید.",
+            min_value="مبلغ نمی‌تواند منفی باشد.",
+        ),
+    )
     price = serializers.IntegerField(
         min_value=0,
-        max_value=2_147_483_647,  # بیشترین مقدار PositiveIntegerField
+        max_value=2_147_483_647,
+        allow_null=True,
         error_messages=messages(
-            required="قیمت را وارد کنید. برای کتاب رایگان صفر بنویسید.",
+            required="قیمت فروش را وارد کنید. برای کتاب رایگان صفر بنویسید.",
+            null="قیمت فروش را وارد کنید. برای کتاب رایگان صفر بنویسید.",
             min_value="قیمت نمی‌تواند منفی باشد.",
         ),
     )
 
     # فقط برای خواندن: کلاینت نمی‌تواند این‌ها را تعیین کند
-    uploaded_by = serializers.ReadOnlyField(source="uploaded_by.username")
+    uploaded_by = serializers.ReadOnlyField(source="uploaded_by.get_full_name")
 
     class Meta:
         model = Book
@@ -148,10 +164,20 @@ class BookCreateSerializer(serializers.ModelSerializer):
         fields = [
             "id", "cover", "cover_url", "title", "original_title", "authors", "translators",
             "isbn", "edition", "language", "publisher", "page_count", "publication_year",
-            "description", "category", "tags", "book_file", "sample_file", "price",
+            "description", "category", "tags", "book_file", "sample_file", "seller_share", "price",
             "status", "uploaded_by", "created_at",
         ]
         read_only_fields = ["status", "created_at"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # The client never chooses which money field it sets; the uploader's role does.
+        # A read-only field is ignored in the input but still returned in the response.
+        request = self.context.get("request")
+        if request is not None and request.user.is_staff:
+            self.fields["seller_share"].read_only = True
+        else:
+            self.fields["price"].read_only = True
 
     # --- اعتبارسنجی هر فیلد (validate_<نام فیلد> را DRF خودش صدا می‌زند) ---
 
@@ -242,6 +268,12 @@ class BookCreateSerializer(serializers.ModelSerializer):
 
                 # uploaded_by از view می‌آید (serializer.save(uploaded_by=request.user))
                 # و status پیش‌فرض مدل، یعنی pending، را می‌گیرد
+                if validated_data["uploaded_by"].is_staff:
+                    # Same upload path for admins (DECISIONS 2.2); only the outcome differs:
+                    # the whole price goes to MegaBook, and there is no one to review it.
+                    # price is required for staff (__init__), so the approval rule holds.
+                    validated_data["seller_share"] = 0
+                    validated_data["status"] = Book.Status.APPROVED
                 book = Book.objects.create(**validated_data)
 
                 # روابط چندبه‌چند فقط بعد از ذخیره‌ی کتاب ممکن است، چون کتاب باید id داشته باشد
@@ -277,6 +309,7 @@ class CategorySerializer(serializers.ModelSerializer):
 # فقط‌خواندنی: برای صفحه‌ی اصلی و صفحه‌ی جزئیات کتاب
 #
 # نکته‌ی امنیتی: book_file عمداً در هیچ‌کدام از این دو نیست (محتوای پولی).
+# seller_share هم نیست: با داشتن آن هر خریداری کمیسیون مگابوک (price - seller_share) را حساب می‌کند.
 # اگر روزی فیلدی اضافه می‌کنید، فهرست fields را دستی بنویسید، هرگز "__all__".
 # ---------------------------------------------------------------------------
 
