@@ -1,10 +1,19 @@
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from .serializers import AccountSerializer, AccountUpdateSerializer, LoginSerializer, RegisterSerializer
+from .serializers import (
+    AccountSerializer,
+    AccountUpdateSerializer,
+    ChangePasswordSerializer,
+    LoginSerializer,
+    RegisterSerializer,
+)
 
 Account = get_user_model()
 
@@ -61,3 +70,27 @@ class MeView(generics.RetrieveUpdateAPIView):
         user = serializer.save()
         # The same shape as GET, so the client can replace what it shows
         return Response(AccountSerializer(user).data)
+
+
+class ChangePasswordView(APIView):
+    """
+    POST /accounts/me/password/ { current_password, new_password }
+    -> 200 { access, refresh }: new tokens for THIS device.
+
+    Every refresh token issued before is blacklisted, so every other device (a
+    stolen token included) is logged out within one access-token lifetime: access
+    tokens are stateless and stay valid until they expire (ACCESS_TOKEN_LIFETIME).
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        serializer = ChangePasswordSerializer(data=request.data, context={'user': user})
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            user.set_password(serializer.validated_data['new_password'])
+            user.save(update_fields=['password'])
+            # The blacklist app records every refresh token it issues (OutstandingToken)
+            for token in OutstandingToken.objects.filter(user=user):
+                BlacklistedToken.objects.get_or_create(token=token)
+        return Response(tokens_for(user))

@@ -25,6 +25,10 @@ urlpatterns = [
     path('catalog/', include('catalog.urls')),
     path('book-requests/', include('book_requests.urls')),
     path('wallet/', include('wallet.urls')),
+    path('cart/', include('cart.urls')),
+    path('orders/', include('orders.urls')),
+    path('library/', include('library.urls')),
+    path('dashboard/', include('dashboard.urls')),
 ]
 
 # فایل‌های آپلودشده (جلد، PDF) را در حالت توسعه خود جنگو سرو می‌کند.

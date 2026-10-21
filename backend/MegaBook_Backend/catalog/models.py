@@ -201,14 +201,18 @@ class Book(models.Model):
         return cls.objects.exclude(status=cls.Status.REJECTED).filter(isbn=isbn).only("id", "status").first()
 
     def can_download_file(self, user):
-        """Who may download the full file: the uploader and admins.
+        """Who may download the full file: admins, and users who own the book
+        (the uploader and buyers; catalog/ownership.py, the one definition).
 
-        When checkout exists, buyers of the book are added here; every download path
-        (the signed-link endpoint and the download view) asks this one method.
+        The book's status is not checked: a bought book stays readable even if it's
+        later taken off the store. Every download path (the signed-link endpoint and
+        the download view) asks this one method.
         """
+        from .ownership import owned_book_ids
+
         if user is None or not user.is_authenticated or not user.is_active:
             return False
-        return user.is_staff or self.uploaded_by_id == user.pk
+        return user.is_staff or self.pk in owned_book_ids(user, [self.pk])
 
     @property
     def file_size(self):

@@ -14,6 +14,8 @@ function toCardProps(book) {
     image: book.cover, // آدرس کامل یا null
     price: book.price, // عدد؛ BookCard خودش آن را قالب‌بندی می‌کند
     badge: book.category?.name ?? null,
+    // The logged-in user uploaded (later: bought) it: no cart button, a "read" link instead
+    isOwned: Boolean(book.is_owned),
   };
 }
 

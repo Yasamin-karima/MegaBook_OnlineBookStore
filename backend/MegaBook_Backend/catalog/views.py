@@ -1,4 +1,5 @@
 from django.http import Http404
+from django.views.decorators.clickjacking import xframe_options_exempt
 from rest_framework import filters, generics, permissions, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.pagination import PageNumberPagination
@@ -11,6 +12,7 @@ from MegaBook_Backend import private_files
 from .book_sources import SourceUnavailable, lookup_isbn
 from .isbn import InvalidISBN, normalize_isbn
 from .models import Book, Category
+from .ownership import annotate_is_owned
 from .serializers import (
     BookCreateSerializer,
     BookDetailSerializer,
@@ -58,6 +60,8 @@ class BookListCreateView(generics.ListCreateAPIView):
         # select_related: category با JOIN در همان query می‌آید (رابطه‌ی ForeignKey)
         # prefetch_related: نویسنده‌های همه‌ی کتاب‌های صفحه با یک query اضافه می‌آیند (چندبه‌چند)
         queryset = approved_books().select_related("category").prefetch_related("authors")
+        # is_owned for the logged-in user (always false for guests)
+        queryset = annotate_is_owned(queryset, self.request.user)
 
         category = self.request.query_params.get("category")
         if category:
@@ -77,11 +81,12 @@ class BookDetailView(generics.RetrieveAPIView):
     permission_classes = [permissions.AllowAny]
 
     def get_queryset(self):
-        return (
+        queryset = (
             approved_books()
             .select_related("category", "publisher")
             .prefetch_related("authors", "translators", "tags")
         )
+        return annotate_is_owned(queryset, self.request.user)
 
 
 LOOKUP_NOT_FOUND = "اطلاعات این شابک در Open Library پیدا نشد. لطفاً مشخصات کتاب را دستی وارد کنید."
@@ -152,7 +157,7 @@ BOOK_FILE = "book-file"  # the signing salt's name; a receipt token can't open a
 
 
 class BookFileLinkView(APIView):
-    """GET /catalog/books/<id>/file-link/ (logged in) -> { url, expires_in }
+    """GET /catalog/books/<id>/file-link/ (logged in) -> { url, expires_in, title }
 
     A signed download link for the full file, valid for a few minutes, for a user
     allowed to download it (Book.can_download_file). Anyone else gets 404, the same
@@ -164,9 +169,16 @@ class BookFileLinkView(APIView):
         book = Book.objects.filter(pk=pk).first()
         if book is None or not book.can_download_file(request.user):
             return Response({"detail": "پیدا نشد."}, status=status.HTTP_404_NOT_FOUND)
-        return Response(private_files.make_link(request, BOOK_FILE, "book_file", book.pk, request.user))
+        link = private_files.make_link(request, BOOK_FILE, "book_file", book.pk, request.user)
+        # The title, for the reader page's header (the book may no longer be public)
+        return Response({**link, "title": book.title})
 
 
+# The reader page (/library/<id>/read) shows the PDF in an <iframe> on the frontend's
+# origin. Django's default X-Frame-Options: DENY would block that. The rule protects
+# pages with buttons and forms from clickjacking; a PDF opened only with the user's
+# own short-lived signed link has nothing to click, so this one view is exempt.
+@xframe_options_exempt
 def book_file_view(request, pk):
     """GET /catalog/books/<id>/file/?t=<signed token> -> the PDF.
 

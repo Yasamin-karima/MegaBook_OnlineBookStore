@@ -1,9 +1,11 @@
+import { notifyAuthChanged } from './authEvents';
 import apiClient from './client';
 
 // توکن‌ها رو ذخیره کن تا در درخواست‌های بعدی استفاده بشن
 function saveTokens({ access, refresh }) {
   localStorage.setItem('access_token', access);
   localStorage.setItem('refresh_token', refresh);
+  notifyAuthChanged();
 }
 
 // User object returned by the backend:
@@ -35,6 +37,7 @@ export async function logoutUser() {
   const refresh = localStorage.getItem('refresh_token');
   localStorage.removeItem('access_token');
   localStorage.removeItem('refresh_token');
+  notifyAuthChanged();
   if (refresh) {
     // توکن refresh رو در بکند باطل کن؛ اگه قبلاً منقضی شده بود مهم نیست
     await apiClient.post('/accounts/logout/', { refresh }).catch(() => {});
@@ -55,6 +58,17 @@ export async function getCurrentUser() {
 export async function updateCurrentUser(fields) {
   const response = await apiClient.patch('/accounts/me/', fields);
   return response.data;
+}
+
+// Change the password: { current_password, new_password }.
+// The server logs out every other device (blacklists all older refresh tokens) and
+// returns new tokens for this one, which we keep. Invalid data: 400 with Persian
+// messages per field (current_password, new_password).
+export async function changePassword({ current_password, new_password }) {
+  const response = await apiClient.post('/accounts/me/password/', { current_password, new_password });
+  // Same user, only new tokens: no auth-changed event (nothing to reload)
+  localStorage.setItem('access_token', response.data.access);
+  localStorage.setItem('refresh_token', response.data.refresh);
 }
 
 // آیا refresh token داریم و هنوز منقضی نشده؟

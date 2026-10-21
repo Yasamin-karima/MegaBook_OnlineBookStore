@@ -407,3 +407,57 @@ class AdminPagesTests(TestCase):
         })
         self.assertEqual(res.status_code, 200)
         self.assertContains(res, EMAIL_OR_PHONE_REQUIRED)
+
+
+class ChangePasswordApiTests(APITestCase):
+    NEW = 'An0ther-Str0ng!'
+
+    def setUp(self):
+        self.user = make_user(email='sara@example.com')
+        res = self.client.post('/accounts/login/', {'identifier': 'sara@example.com', 'password': PASSWORD}, format='json')
+        self.old_refresh = res.data['refresh']
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {res.data['access']}")
+
+    def change(self, current, new):
+        return self.client.post('/accounts/me/password/', {'current_password': current, 'new_password': new}, format='json')
+
+    def login(self, password):
+        return self.client.post('/accounts/login/', {'identifier': 'sara@example.com', 'password': password}, format='json')
+
+    def test_wrong_current_password(self):
+        res = self.change('wrong', self.NEW)
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(res.data['current_password'], ['رمز عبور فعلی اشتباه است.'])
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password(PASSWORD))
+
+    def test_weak_new_password_gets_validator_messages(self):
+        res = self.change(PASSWORD, '1234')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('رمز عبور باید دست‌کم ۸ کاراکتر باشد.', res.data['new_password'])
+        self.assertIn('رمز عبور نباید فقط عدد باشد.', res.data['new_password'])
+
+    def test_same_password_rejected(self):
+        res = self.change(PASSWORD, PASSWORD)
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('new_password', res.data)
+
+    def test_success_logs_out_other_devices_and_keeps_this_one(self):
+        res = self.change(PASSWORD, self.NEW)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(set(res.data), {'access', 'refresh'})
+
+        self.client.credentials()
+        self.assertEqual(self.login(PASSWORD).status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(self.login(self.NEW).status_code, status.HTTP_200_OK)
+
+        # The refresh token from before the change no longer works...
+        old = self.client.post('/accounts/token/refresh/', {'refresh': self.old_refresh}, format='json')
+        self.assertEqual(old.status_code, status.HTTP_401_UNAUTHORIZED)
+        # ...the one returned with the change does
+        new = self.client.post('/accounts/token/refresh/', {'refresh': res.data['refresh']}, format='json')
+        self.assertEqual(new.status_code, status.HTTP_200_OK)
+
+    def test_requires_login(self):
+        self.client.credentials()
+        self.assertEqual(self.change(PASSWORD, self.NEW).status_code, status.HTTP_401_UNAUTHORIZED)

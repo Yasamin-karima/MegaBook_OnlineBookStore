@@ -117,9 +117,16 @@ class LedgerEntry(models.Model):
     gateway_payment = models.ForeignKey(
         "GatewayPayment", on_delete=models.PROTECT, null=True, blank=True, related_name="entries"
     )
-    # Ties together the legs of one transfer (e.g. one purchase: buyer, seller, MegaBook).
-    # When the orders app exists, an `order` foreign key is added next to it.
+    # Ties together the legs of one transfer (e.g. one purchase: buyer, seller, MegaBook)
     group = models.UUIDField(null=True, blank=True, db_index=True)
+    # What a purchase entry belongs to: the buyer's one debit links to the order, each
+    # book's seller income and commission link to that book's line (DECISIONS 10.5)
+    order = models.ForeignKey(
+        "orders.Order", on_delete=models.PROTECT, null=True, blank=True, related_name="ledger_entries"
+    )
+    order_item = models.ForeignKey(
+        "orders.OrderItem", on_delete=models.PROTECT, null=True, blank=True, related_name="ledger_entries"
+    )
 
     objects = LedgerEntryQuerySet.as_manager()
 
@@ -166,12 +173,23 @@ class LedgerEntry(models.Model):
                 condition=Q(withdrawal_request__isnull=True) | Q(type__in=["withdrawal", "withdrawal_reversal"]),
                 name="ledger_withdrawal_link_only_on_withdrawal",
             ),
+            # A purchase debit belongs to an order; seller income and commission belong
+            # to one order line; no other type links to orders
+            models.CheckConstraint(
+                condition=(Q(type="purchase") & Q(order__isnull=False) & Q(order_item__isnull=True))
+                | (Q(type__in=["sale_income", "commission"]) & Q(order__isnull=True) & Q(order_item__isnull=False))
+                | (~Q(type__in=["purchase", "sale_income", "commission"]) & Q(order__isnull=True) & Q(order_item__isnull=True)),
+                name="ledger_purchase_links_match_type",
+            ),
             # Exactly-once, in the database itself: a top-up request or a gateway payment
             # can credit a wallet only once, and a withdrawal has at most one debit and
             # one reversal. Even a bug that calls the service twice can't double the money.
             models.UniqueConstraint(fields=["topup_request"], name="ledger_one_entry_per_topup_request"),
             models.UniqueConstraint(fields=["gateway_payment"], name="ledger_one_entry_per_gateway_payment"),
             models.UniqueConstraint(fields=["withdrawal_request", "type"], name="ledger_one_entry_per_withdrawal_type"),
+            # An order is paid once; each line pays its seller and MegaBook once
+            models.UniqueConstraint(fields=["order"], name="ledger_one_debit_per_order"),
+            models.UniqueConstraint(fields=["order_item", "type"], name="ledger_one_entry_per_order_item_type"),
         ]
 
     def __str__(self):

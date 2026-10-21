@@ -273,7 +273,7 @@ class BookReadApiTests(APITestCase):
         item = self.client.get(self.list_url).data["results"][0]
         self.assertEqual(
             set(item.keys()),
-            {"id", "title", "authors", "cover", "price", "category", "language", "created_at"},
+            {"id", "title", "authors", "cover", "price", "category", "language", "created_at", "is_owned"},
         )
         self.assertCountEqual(item["authors"], ["الف", "ب"])
         self.assertEqual(item["category"], {"id": self.science.id, "name": "علمی"})
@@ -291,7 +291,7 @@ class BookReadApiTests(APITestCase):
         data = self.client.get(f"{self.list_url}{book.id}/").data
         self.assertEqual(
             set(data.keys()),
-            {"id", "title", "authors", "cover", "price", "category", "language", "created_at",
+            {"id", "title", "authors", "cover", "price", "category", "language", "created_at", "is_owned",
              "original_title", "isbn", "translators", "publisher", "tags", "description",
              "page_count", "publication_year", "edition", "sample_file", "file_size"},
         )

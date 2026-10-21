@@ -51,6 +51,10 @@ INSTALLED_APPS = [
     'catalog',
     'book_requests',
     'wallet',
+    'cart',
+    'orders',
+    'library',
+    'dashboard',
 ]
 
 MIDDLEWARE = [

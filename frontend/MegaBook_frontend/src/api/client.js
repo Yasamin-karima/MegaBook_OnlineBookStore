@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { notifyAuthChanged } from './authEvents';
 
 const BASE_URL = 'http://localhost:8000';
 
@@ -62,6 +63,7 @@ apiClient.interceptors.response.use(
       // refresh هم منقضی یا باطل شده: کاربر باید دوباره وارد بشه.
       localStorage.removeItem('access_token');
       localStorage.removeItem('refresh_token');
+      notifyAuthChanged();
       // یک بار بدون توکن امتحان کن تا صفحه‌های عمومی (مثل لیست کتاب‌ها) باز هم کار کنن؛
       // اگه صفحه نیاز به ورود داشته باشه، همون 401 به کامپوننت می‌رسه.
       delete original.headers.Authorization;

@@ -24,6 +24,7 @@ REGISTER_CONFLICT = "این حساب همین حالا ساخته شد. اگر �
 UPDATE_CONFLICT = "این ایمیل یا شماره موبایل همین حالا برای حساب دیگری ثبت شد."
 CURRENT_PASSWORD_REQUIRED = "برای تغییر ایمیل یا شماره موبایل، رمز عبور فعلی را وارد کنید."
 CURRENT_PASSWORD_WRONG = "رمز عبور فعلی اشتباه است."
+NEW_PASSWORD_SAME = "رمز عبور جدید باید با رمز فعلی فرق داشته باشد."
 KEEP_EMAIL_OR_PHONE = "نمی‌توانید هم ایمیل و هم شماره موبایل را حذف کنید؛ دست‌کم یکی باید بماند."
 STAFF_EMAIL_REQUIRED = "حساب مدیر باید ایمیل داشته باشد."
 
@@ -220,6 +221,38 @@ class AccountUpdateSerializer(serializers.ModelSerializer):
         except IntegrityError:
             # Another account took this email/phone between the check and the save
             raise serializers.ValidationError(taken_errors(validated_data, instance) or [UPDATE_CONFLICT])
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    """POST /accounts/me/password/: the current password, then the new one.
+
+    The new password goes through the same Django validators (and Persian messages)
+    as registration, including "too similar to your name, email or phone".
+    """
+
+    current_password = serializers.CharField(
+        write_only=True, style={'input_type': 'password'}, error_messages=required("رمز عبور فعلی را وارد کنید.")
+    )
+    new_password = serializers.CharField(
+        write_only=True, style={'input_type': 'password'}, error_messages=required("رمز عبور جدید را وارد کنید.")
+    )
+
+    def validate_current_password(self, value):
+        if not self.context['user'].check_password(value):
+            raise serializers.ValidationError(CURRENT_PASSWORD_WRONG)
+        return value
+
+    def validate_new_password(self, value):
+        try:
+            validate_password(value, user=self.context['user'])
+        except DjangoValidationError as error:
+            raise serializers.ValidationError(persian_password_errors(error))
+        return value
+
+    def validate(self, attrs):
+        if attrs['new_password'] == attrs['current_password']:
+            raise serializers.ValidationError({'new_password': [NEW_PASSWORD_SAME]})
+        return attrs
 
 
 class LoginSerializer(TokenObtainPairSerializer):

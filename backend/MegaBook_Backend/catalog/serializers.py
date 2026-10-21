@@ -321,10 +321,13 @@ class BookListSerializer(serializers.ModelSerializer):
     # {id, name} یا null
     category = CategorySerializer(read_only=True)
     # cover خودکار ImageField است: با request در context آدرس کامل می‌دهد و اگر خالی باشد null
+    # True if the logged-in user uploaded (later: bought) the book: they can read it and
+    # must not buy it. Computed by catalog.ownership.annotate_is_owned in the view.
+    is_owned = serializers.BooleanField(read_only=True, default=False)
 
     class Meta:
         model = Book
-        fields = ["id", "title", "authors", "cover", "price", "category", "language", "created_at"]
+        fields = ["id", "title", "authors", "cover", "price", "category", "language", "created_at", "is_owned"]
 
 
 class BookDetailSerializer(BookListSerializer):

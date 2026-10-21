@@ -12,6 +12,11 @@ import RequestByIsbnPage from './components/RequestByIsbnPage';
 import BookDetailPage from './components/BookDetailPage';
 import AccountPage from './components/AccountPage';
 import WalletPage from './components/WalletPage';
+import CartPage from './components/CartPage';
+import LibraryPage from './components/LibraryPage';
+import BookReaderPage from './components/BookReaderPage';
+import DashboardPage from './components/DashboardPage';
+import ChangePasswordPage from './components/ChangePasswordPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import useGoBack from './hooks/useGoBack';
 
@@ -50,6 +55,21 @@ const WalletRoute = () => {
   return <WalletPage onBack={goBack} />;
 }
 
+const CartRoute = () => {
+  const goBack = useGoBack();
+  return <CartPage onBack={goBack} />;
+}
+
+const BookReaderRoute = () => {
+  const goBack = useGoBack();
+  return <BookReaderPage onBack={goBack} />;
+}
+
+const ChangePasswordRoute = () => {
+  const goBack = useGoBack();
+  return <ChangePasswordPage onBack={goBack} />;
+}
+
 const App = () => {
   return (
     <Routes>
@@ -86,6 +106,15 @@ const App = () => {
           </ProtectedRoute>
         }
       />
+      {/* The cart lives on the server, per user */}
+      <Route
+        path="/cart"
+        element={
+          <ProtectedRoute>
+            <CartRoute />
+          </ProtectedRoute>
+        }
+      />
       {/* The user's wallet: balance, history, top-up, withdrawal */}
       <Route
         path="/wallet"
@@ -96,6 +125,41 @@ const App = () => {
         }
       />
       {/* هر آدرس ناشناخته‌ای به صفحه اصلی برمی‌گردد */}
+      {/* کتابخانه: کتاب‌های خریداری‌شده و بارگذاری‌شده‌ی کاربر */}
+      <Route
+        path="/library"
+        element={
+          <ProtectedRoute>
+            <LibraryPage />
+          </ProtectedRoute>
+        }
+      />
+      {/* خواندن کتابی که کاربر دارد؛ برای بقیه پیام «این کتاب را ندارید» */}
+      <Route
+        path="/library/:id/read"
+        element={
+          <ProtectedRoute>
+            <BookReaderRoute />
+          </ProtectedRoute>
+        }
+      />
+      {/* داشبورد: خلاصه‌ی حساب، کیف پول، سبد، درخواست‌ها و بارگذاری‌ها */}
+      <Route
+        path="/dashboard"
+        element={
+          <ProtectedRoute>
+            <DashboardPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/settings/password"
+        element={
+          <ProtectedRoute>
+            <ChangePasswordRoute />
+          </ProtectedRoute>
+        }
+      />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

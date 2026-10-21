@@ -18,6 +18,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from catalog.models import Book
+from orders.models import Order, OrderItem
 
 from . import services
 from .models import GatewayPayment, ImmutableLedgerError, LedgerEntry, TopUpRequest, Wallet, WithdrawalRequest
@@ -387,9 +388,14 @@ class TransferTests(TestCase):
             price=price, seller_share=share, uploaded_by=uploader or self.seller, book_file="books/files/x.pdf",
         )
 
+    def legs(self, *books):
+        """purchase_legs for an order of these books (orders.services.checkout does this for real)."""
+        order = Order.objects.create(buyer=self.buyer)
+        items = [OrderItem.objects.create(order=order, book=b, price=b.price, seller_share=b.seller_share) for b in books]
+        return services.purchase_legs(services.wallet_of(self.buyer), order, items, "خرید")
+
     def test_purchase_legs_sum_to_zero_and_move_the_money(self):
-        legs = services.purchase_legs(services.wallet_of(self.buyer), self.book(80_000, 60_000))
-        entries = services.transfer(legs, "خرید کتاب x")
+        entries = services.transfer(self.legs(self.book(80_000, 60_000)))
         self.assertEqual(sum(e.amount for e in entries), 0)
         self.assertEqual(len({e.group for e in entries}), 1)
         self.assertEqual(balance(self.buyer), 20_000)
@@ -398,7 +404,7 @@ class TransferTests(TestCase):
 
     def test_insufficient_balance_writes_nothing(self):
         before = LedgerEntry.objects.count()
-        legs = services.purchase_legs(services.wallet_of(self.buyer), self.book(150_000, 100_000))
+        legs = self.legs(self.book(150_000, 100_000))
         with self.assertRaises(services.WalletError) as ctx:
             services.transfer(legs)
         self.assertEqual(ctx.exception.message, services.INSUFFICIENT_BALANCE)
@@ -407,9 +413,14 @@ class TransferTests(TestCase):
 
     def test_admin_book_has_no_seller_leg_and_free_book_no_legs(self):
         admin_book = self.book(30_000, 0, uploader=self.admin)
-        legs = services.purchase_legs(services.wallet_of(self.buyer), admin_book)
-        self.assertEqual([leg[2] for leg in legs], ["purchase", "commission"])
-        self.assertEqual(services.purchase_legs(services.wallet_of(self.buyer), self.book(0, 0)), [])
+        self.assertEqual([leg.type for leg in self.legs(admin_book)], ["purchase", "commission"])
+        self.assertEqual(self.legs(self.book(0, 0)), [])
+
+    def test_one_buyer_leg_per_order(self):
+        legs = self.legs(self.book(30_000, 20_000), self.book(50_000, 50_000))
+        self.assertEqual([(leg.type, leg.amount) for leg in legs], [
+            ("purchase", -80_000), ("sale_income", 20_000), ("commission", 10_000), ("sale_income", 50_000),
+        ])
 
     def test_legs_must_sum_to_zero(self):
         with self.assertRaises(ValueError):
@@ -420,8 +431,7 @@ class TransferTests(TestCase):
 
     def test_platform_wallet_balance_is_total_commission(self):
         for _ in range(2):
-            legs = services.purchase_legs(services.wallet_of(self.buyer), self.book(30_000, 20_000))
-            services.transfer(legs)
+            services.transfer(self.legs(self.book(30_000, 20_000)))
         self.assertEqual(services.balance_of(services.platform_wallet()), 20_000)
 
 
@@ -467,11 +477,16 @@ class ConcurrencyTests(TransactionTestCase):
             uploaded_by=self.seller, book_file="books/files/x.pdf",
         )
         buyer_wallet = services.wallet_of(self.buyer)
+        orders = []
+        for _ in range(2):
+            order = Order.objects.create(buyer=self.buyer)
+            item = OrderItem.objects.create(order=order, book=book, price=book.price, seller_share=book.seller_share)
+            orders.append((order, item))
 
-        def buy():
-            return services.transfer(services.purchase_legs(buyer_wallet, book))
+        def buy(order, item):
+            return lambda: services.transfer(services.purchase_legs(buyer_wallet, order, [item]))
 
-        results = self.run_together(buy, buy)
+        results = self.run_together(buy(*orders[0]), buy(*orders[1]))
         errors = [r for r in results if isinstance(r, Exception)]
         self.assertEqual(len(errors), 1, results)
         self.assertIsInstance(errors[0], services.WalletError)

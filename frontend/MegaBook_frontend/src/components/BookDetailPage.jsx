@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { getBook } from "../api/catalog";
+import useCart from "../hooks/useCart";
 import useGoBack from "../hooks/useGoBack";
 import { formatFileSize, formatPrice, languageName, toFaNumber, toFaYear } from "../utils/format";
 
@@ -14,8 +15,6 @@ import { formatFileSize, formatPrice, languageName, toFaNumber, toFaYear } from 
 //   • کتاب ناموجود یا تاییدنشده (pending / rejected) => 404.
 // ═════════════════════════════════════════════════════════════
 
-const CART_SOON = "سبد خرید به‌زودی فعال می‌شود";
-
 // «مت هیگ، فلانی»
 const joinNames = (names) => names.join("، ");
 
@@ -28,6 +27,10 @@ export default function BookDetailPage() {
   // و effect پایین دوباره اجرا می‌شود؛ لازم نیست کامپوننت از نو ساخته شود.
   const { id } = useParams();
   const goBack = useGoBack();
+  const navigate = useNavigate();
+  const location = useLocation();
+  // The shared cart (src/context/CartProvider.jsx): the same state the navbar badge reads
+  const { count: cartCount, isInCart, isPending, addToCart } = useCart();
 
   // با هر «تلاش دوباره» یکی زیاد می‌شود تا effect دوباره اجرا شود
   const [attempt, setAttempt] = useState(0);
@@ -40,12 +43,6 @@ export default function BookDetailPage() {
   const status = result.key === requestKey ? result.status : "loading";
   const book = result.book;
 
-  // TODO (روز ۱۳، کیف پول): موجودی را جدا از کتاب بگیرید، فقط برای کاربر واردشده
-  // (مثلاً اگر توکن هست: GET /wallet/)، و اگر خطا داد نادیده بگیرید (balance همان null بماند).
-  // کارت کیف پول پایین فقط وقتی نمایش داده می‌شود که balance مقدار داشته باشد، پس بازدیدکننده‌ی
-  // مهمان یا خطای کیف پول هیچ‌وقت صفحه‌ی کتاب را خراب نمی‌کند.
-  const [balance] = useState(null);
-
   // وضعیت‌های تعاملی
   const [descExpanded, setDescExpanded] = useState(false);
   // آدرس جلدی که لود نشد؛ اگر برابر جلد همین کتاب باشد، جای‌خالی نمایش داده می‌شود
@@ -53,9 +50,8 @@ export default function BookDetailPage() {
   const [toast, setToast] = useState("");
   const toastTimer = useRef(null);
 
-  // فقط خود کتاب تعیین می‌کند صفحه باز شود یا نه. قبلاً کتاب و کیف پول با Promise.all
-  // با هم گرفته می‌شدند؛ Promise.all اگر «هر کدام» شکست بخورد کل نتیجه را شکست‌خورده می‌کند،
-  // پس خطای کیف پول (مثلاً برای کاربر مهمان) کل صفحه‌ی کتاب را به حالت خطا می‌برد.
+  // فقط خود کتاب تعیین می‌کند صفحه باز شود یا نه. موجودی کیف پول در این صفحه نمایش داده
+  // نمی‌شود (DECISIONS ۸)؛ سبد خرید از CartProvider می‌آید و خطایش صفحه را خراب نمی‌کند.
   useEffect(() => {
     // AbortController: اگر id عوض شود یا صفحه بسته شود، درخواست قبلی لغو می‌شود
     // تا جواب کتاب قبلی روی صفحه‌ی کتاب جدید ننشیند.
@@ -86,13 +82,17 @@ export default function BookDetailPage() {
     toastTimer.current = setTimeout(() => setToast(""), 2500);
   }
 
-  function handleAddToCart() {
-    // TODO (روز ۱۵، سبد خرید): وقتی سبد ساخته شد (مثلاً CartContext):
-    //   const { addToCart, isInCart } = useCart();
-    //   addToCart(book);
-    // و دکمه برای کتابِ داخل سبد «در سبد خرید · مشاهده سبد» (Link به /cart) شود.
-    // تا آن موقع دکمه وانمود نمی‌کند کاری انجام شده.
-    showToast(CART_SOON);
+  async function handleAddToCart() {
+    const result = await addToCart(book.id);
+    if (result.ok) {
+      showToast("به سبد خرید اضافه شد.");
+    } else if (result.code === "login_required") {
+      // After logging in, the login page sends the user back here
+      navigate("/login", { state: { from: location } });
+    } else if (result.message) {
+      // The backend's Persian reason (not available, own upload, cart full, ...)
+      showToast(result.message);
+    }
   }
 
   async function handleShare() {
@@ -135,13 +135,12 @@ export default function BookDetailPage() {
 
   // ── محاسبات نمایشی ──
   const isFree = book.price === 0;
-  const shortage = isFree ? 0 : Math.max(0, book.price - (balance ?? 0));
+  const inCart = isInCart(book.id);
   const isTranslated = book.translators.length > 0;
   const showCover = book.cover && failedCover !== book.cover;
 
-  // TODO (روز ۱۶-۱۷، خرید): is_owned هنوز در API نیست و اینجا همیشه undefined است، پس
-  // همیشه شاخه‌ی خرید نمایش داده می‌شود. وقتی خرید ساخته شد، API برای کاربر واردشده
-  // is_owned را برمی‌گرداند و شاخه‌ی «خواندن کتاب» فعال می‌شود.
+  // is_owned: the logged-in user uploaded this book (after checkout: or bought it).
+  // They can read it and must not buy it, so they get "read the book" instead of the cart.
   const isOwned = Boolean(book.is_owned);
 
   // فقط ویژگی‌هایی که مقدار دارند نمایش داده می‌شوند (خیلی از فیلدها اختیاری‌اند)
@@ -167,16 +166,14 @@ export default function BookDetailPage() {
             →
           </button>
           <h1 className="text-base font-bold text-gray-900">مشخصات کتاب</h1>
-          {/* TODO (روز ۱۵): وقتی صفحه‌ی سبد خرید ساخته شد، این دکمه <Link to="/cart"> شود.
-              تا آن موقع پیام می‌دهد، نه اینکه به صفحه‌ای برود که وجود ندارد. */}
-          <button
-            type="button"
-            onClick={() => showToast(CART_SOON)}
-            aria-label="سبد خرید"
+          <Link
+            to="/cart"
+            aria-label={cartCount > 0 ? `سبد خرید، ${toFaNumber(cartCount)} کتاب` : "سبد خرید"}
             className="relative flex h-10 w-10 items-center justify-center rounded-xl text-xl hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600/40"
           >
             🛒
-          </button>
+            <CartBadge count={cartCount} />
+          </Link>
         </header>
 
         {/* ═══ جلد کتاب ═══ */}
@@ -247,7 +244,7 @@ export default function BookDetailPage() {
           </div>
         </section>
 
-        {/* ═══ کارت قیمت و کیف پول ═══ */}
+        {/* ═══ کارت قیمت ═══ */}
         <section className="mx-4 mt-6 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
           <div className="flex items-baseline justify-between">
             <span className="text-sm text-gray-500">قیمت</span>
@@ -259,35 +256,6 @@ export default function BookDetailPage() {
               </span>
             )}
           </div>
-
-          {/* موجودی کیف پول فقط وقتی معنا دارد که کتاب پولی است و هنوز خریده نشده،
-              و فقط وقتی موجودی واقعاً گرفته شده باشد (فعلاً هرگز؛ TODO بالای کامپوننت) */}
-          {!isFree && !isOwned && balance !== null && (
-            <div
-              className={`mt-4 flex items-center gap-3 rounded-xl p-3 ${
-                shortage > 0 ? "bg-amber-50 ring-1 ring-amber-200" : "bg-gray-50"
-              }`}
-            >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-lg shadow-sm">
-                👛
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-xs text-gray-500">موجودی کیف پول</p>
-                <p className="font-semibold text-gray-900">{toFaNumber(balance)} تومان</p>
-                {shortage > 0 && (
-                  <p className="mt-0.5 text-xs text-amber-700">
-                    برای خرید {toFaNumber(shortage)} تومان کم دارید.
-                  </p>
-                )}
-              </div>
-              <Link
-                to="/wallet"
-                className="shrink-0 rounded-lg px-3 py-2 text-sm font-semibold text-blue-600 hover:bg-blue-50"
-              >
-                شارژ کیف پول
-              </Link>
-            </div>
-          )}
 
           {/* نمونه رایگان، فقط اگر فایل نمونه آپلود شده باشد.
               <a> معمولی است نه Link: یک فایل PDF روی سرور بک‌اند است، نه صفحه‌ای از خود برنامه. */}
@@ -407,8 +375,7 @@ export default function BookDetailPage() {
       <div className="fixed inset-x-0 bottom-0 z-20 border-t border-gray-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-md items-center gap-3 px-4 py-3">
           {isOwned ? (
-            // TODO (روز ۱۶-۱۷): مسیر خواندن کتاب خریداری‌شده هنوز نیست. فایل باید از endpointی
-            // بیاید که مالکیت کاربر را چک می‌کند (مثلاً GET /catalog/books/<id>/download/).
+            // The reader page (BookReaderPage) fetches a signed link and shows the PDF
             <Link
               to={`/library/${book.id}/read`}
               className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-green-600 font-semibold text-white hover:bg-green-700"
@@ -422,16 +389,26 @@ export default function BookDetailPage() {
                 <p className="text-xs text-gray-500">قیمت</p>
                 <p className="font-bold text-gray-900">{formatPrice(book.price)}</p>
               </div>
-              <button
-                type="button"
-                onClick={handleAddToCart}
-                className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 font-semibold text-white shadow-md shadow-blue-600/20 hover:bg-blue-700 focus:outline-none focus-visible:ring-4 focus-visible:ring-blue-600/30"
-              >
-                <span aria-hidden="true">🛒</span>
-                {/* 🔌 برای کتاب رایگان بعداً می‌شود مستقیم به کتابخانه اضافه کرد،
-                    بدون عبور از سبد خرید */}
-                {isFree ? "افزودن به کتابخانه" : "افزودن به سبد خرید"}
-              </button>
+              {inCart ? (
+                <Link
+                  to="/cart"
+                  className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl border-2 border-blue-600 font-semibold text-blue-600 hover:bg-blue-50"
+                >
+                  <span aria-hidden="true">✓</span>
+                  در سبد خرید · مشاهده سبد
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleAddToCart}
+                  disabled={isPending(book.id)}
+                  className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 font-semibold text-white shadow-md shadow-blue-600/20 hover:bg-blue-700 focus:outline-none focus-visible:ring-4 focus-visible:ring-blue-600/30 disabled:cursor-wait disabled:bg-blue-300"
+                >
+                  <span aria-hidden="true">🛒</span>
+                  {/* Free books too: every book goes through the cart, one purchase path */}
+                  {isPending(book.id) ? "در حال افزودن…" : "افزودن به سبد خرید"}
+                </button>
+              )}
             </>
           )}
         </div>
@@ -499,5 +476,15 @@ function MessageState({ emoji, title, text, onRetry }) {
         </Link>
       </div>
     </div>
+  );
+}
+
+// Number of books in the cart on the header cart icon; hidden when empty
+function CartBadge({ count }) {
+  if (!count) return null;
+  return (
+    <span className="absolute -left-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[11px] font-bold text-white">
+      {toFaNumber(count)}
+    </span>
   );
 }

@@ -19,8 +19,11 @@ one purchase locked A then B while another locked B then A, each would wait for
 the other forever (a deadlock). Locking in one global order makes that impossible.
 
 Lock order across the module: request row (if any) first, then wallet rows by id.
+Checkout (orders/services.py) locks the buyer's user row before calling transfer;
+no code locks a user row after a wallet row, so that can't form a cycle either.
 """
 import uuid
+from typing import NamedTuple
 
 from django.db import IntegrityError, transaction
 from django.db.models import BigIntegerField, Sum, Value
@@ -283,53 +286,77 @@ def adjust(wallet, amount, description, admin):
 # Multi-wallet transfer (for checkout)
 # ---------------------------------------------------------------------------
 
+class Leg(NamedTuple):
+    """One line of a transfer. The optional fields are copied onto the entry."""
+
+    wallet: Wallet
+    amount: int
+    type: str
+    description: str = ""
+    order: object = None
+    order_item: object = None
+
+
 def transfer(legs, description=""):
     """Move money between wallets as one unit; the legs must sum to zero.
 
-    legs: [(wallet, amount, type), ...] with type in LedgerEntry.TRANSFER_TYPES.
-    Double-entry style: money is never created or destroyed by a transfer, only
-    moved, so the legs of one transfer always sum to zero. All legs share a group id.
+    legs: Leg(...) or plain (wallet, amount, type) tuples, with type in
+    LedgerEntry.TRANSFER_TYPES. Double-entry style: money is never created or
+    destroyed by a transfer, only moved, so the legs of one transfer always sum to
+    zero. All legs share a group id. `description` is used for legs without their own.
     If any user wallet would go below zero, nothing is written.
     Returns the created entries.
     """
-    legs = [(wallet, amount, entry_type) for wallet, amount, entry_type in legs if amount != 0]
+    legs = [Leg(*leg) for leg in legs]
+    legs = [leg for leg in legs if leg.amount != 0]
     if len(legs) < 2:
         raise ValueError("A transfer needs at least two non-zero legs.")
-    if sum(amount for _, amount, _ in legs) != 0:
+    if sum(leg.amount for leg in legs) != 0:
         raise ValueError("Transfer legs must sum to zero.")
-    for _, amount, entry_type in legs:
-        if entry_type not in LedgerEntry.TRANSFER_TYPES:
-            raise ValueError(f"{entry_type} is not a transfer type.")
-        if isinstance(amount, bool) or not isinstance(amount, int):
+    for leg in legs:
+        if leg.type not in LedgerEntry.TRANSFER_TYPES:
+            raise ValueError(f"{leg.type} is not a transfer type.")
+        if isinstance(leg.amount, bool) or not isinstance(leg.amount, int):
             raise ValueError("Amounts are integer toman.")
 
     with transaction.atomic():
-        locked = _lock(*(wallet.pk for wallet, _, _ in legs))
+        locked = _lock(*(leg.wallet.pk for leg in legs))
         # Net change per wallet: the same wallet may appear in several legs
-        # (e.g. an uploader buying their own book)
+        # (e.g. one seller with two books in the same order)
         net = {}
-        for wallet, amount, _ in legs:
-            net[wallet.pk] = net.get(wallet.pk, 0) + amount
+        for leg in legs:
+            net[leg.wallet.pk] = net.get(leg.wallet.pk, 0) + leg.amount
         for wallet_id, change in net.items():
             _check_can_change(locked[wallet_id], change)
 
         group = uuid.uuid4()
         return [
             LedgerEntry.objects.create(
-                wallet=locked[wallet.pk], amount=amount, type=entry_type, group=group, description=description,
+                wallet=locked[leg.wallet.pk], amount=leg.amount, type=leg.type, group=group,
+                description=(leg.description or description)[:255], order=leg.order, order_item=leg.order_item,
             )
-            for wallet, amount, entry_type in legs
+            for leg in legs
         ]
 
 
-def purchase_legs(buyer_wallet, book):
-    """The legs of buying one book: the buyer pays price, the uploader gets seller_share,
-    MegaBook gets the commission (price - seller_share, DECISIONS 3.11). Zero legs are
-    left out (a free book has none; an admin's book has no seller leg)."""
-    seller_wallet = wallet_of(book.uploaded_by)
-    legs = [
-        (buyer_wallet, -book.price, LedgerEntry.Type.PURCHASE),
-        (seller_wallet, book.seller_share, LedgerEntry.Type.SALE_INCOME),
-        (platform_wallet(), book.price - book.seller_share, LedgerEntry.Type.COMMISSION),
-    ]
-    return [leg for leg in legs if leg[1] != 0]
+def purchase_legs(buyer_wallet, order, items, buyer_description=""):
+    """The legs of paying for one order (DECISIONS 10.5):
+
+    - ONE debit for the buyer: the order's total, linked to the order;
+    - per book: the uploader's seller_share and MegaBook's commission
+      (price - seller_share, DECISIONS 3.11), linked to that book's order item.
+
+    Amounts come from the order items (the snapshot taken at checkout), never from
+    the request. Zero legs are left out: a free book has none, an admin's book has no
+    seller leg, a book whose price equals the share has no commission leg.
+    """
+    platform = platform_wallet()
+    legs = [Leg(buyer_wallet, -sum(item.price for item in items), LedgerEntry.Type.PURCHASE,
+                buyer_description, order=order)]
+    for item in items:
+        title = item.book.title
+        legs.append(Leg(wallet_of(item.book.uploaded_by), item.seller_share, LedgerEntry.Type.SALE_INCOME,
+                        f"فروش «{title}»", order_item=item))
+        legs.append(Leg(platform, item.commission, LedgerEntry.Type.COMMISSION,
+                        f"کمیسیون «{title}»", order_item=item))
+    return [leg for leg in legs if leg.amount != 0]
