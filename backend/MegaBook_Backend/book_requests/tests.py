@@ -297,3 +297,158 @@ class DatabaseConstraintTests(TestCase):
             BookRequest.objects.filter(pk=self.book_request.pk).update(status="rejected")
         with self.assertRaises(IntegrityError), transaction.atomic():
             BookRequest.objects.filter(pk=self.book_request.pk).update(rejection_reason="بدون رد شدن")
+
+
+# ---------------------------------------------------------------------------
+# Public list and "I want this too"
+# ---------------------------------------------------------------------------
+
+def open_request(isbn, title="کتاب", *requesters, **fields):
+    book_request = BookRequest.objects.create(isbn=isbn, title=title, authors="نویسنده", **fields)
+    for user in requesters:
+        RequestEntry.objects.create(request=book_request, requester=user)
+    return book_request
+
+
+class PublicListTests(APITestCase):
+    def setUp(self):
+        self.sara = make_user("sara")
+        self.ali = make_user("ali")
+        self.reza = make_user("reza")
+        self.one = open_request("9780000000011", "یک نفر", self.sara)
+        self.many = open_request("9780000000012", "سه نفر", self.sara, self.ali, self.reza)
+        open_request("9780000000013", "تأمین‌شده", self.ali, status=BookRequest.Status.FULFILLED)
+        open_request("9780000000014", "ردشده", self.ali, status=BookRequest.Status.REJECTED, rejection_reason="حق نشر")
+
+    def items(self, **params):
+        response = self.client.get(URL, params)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        return response.data
+
+    def test_anonymous_sees_only_open_requests_with_no_personal_data(self):
+        data = self.items()
+        self.assertEqual(data["count"], 2)
+        self.assertEqual({r["title"] for r in data["results"]}, {"یک نفر", "سه نفر"})
+        self.assertEqual(set(data["results"][0]), {
+            "id", "isbn", "title", "authors", "cover", "created_at", "requester_count", "is_mine", "book_in_review",
+        })
+        body = self.client.get(URL).content.decode()
+        for user in (self.sara, self.ali, self.reza):
+            self.assertNotIn(user.email, body)
+            self.assertNotIn(user.first_name, body)
+        for key in ("requester", "requesters", "requester_id", "email", "phone", "user", "user_id", "notes", "first_name"):
+            self.assertNotIn(f'"{key}":', body)
+        self.assertFalse(any(r["is_mine"] for r in data["results"]))
+
+    def test_requester_counts(self):
+        counts = {r["title"]: r["requester_count"] for r in self.items()["results"]}
+        self.assertEqual(counts, {"یک نفر": 1, "سه نفر": 3})
+
+    def test_is_mine_for_a_logged_in_user(self):
+        alone = make_user("alone")
+        RequestEntry.objects.create(request=self.one, requester=alone)
+        self.client.force_authenticate(alone)
+        mine = {r["title"]: r["is_mine"] for r in self.items()["results"]}
+        self.assertEqual(mine, {"یک نفر": True, "سه نفر": False})
+
+    def test_ordering_and_pagination(self):
+        for i in range(12):
+            open_request(f"97800000001{i:02d}", f"تازه {i}")
+        newest = self.items()
+        self.assertEqual(newest["count"], 14)
+        self.assertEqual(len(newest["results"]), 10)
+        self.assertEqual(newest["results"][0]["title"], "تازه 11")
+        self.assertEqual(len(self.items(page=2)["results"]), 4)
+        most = self.items(ordering="most_requested")["results"]
+        self.assertEqual([r["requester_count"] for r in most[:2]], [3, 1])
+
+    def test_search_by_title_and_persian_isbn(self):
+        self.assertEqual(self.items(search="سه")["count"], 1)
+        self.assertEqual(self.items(search="۹۷۸-۰۰۰۰۰۰۰۰۱۱")["results"][0]["title"], "یک نفر")
+
+    def test_book_in_review_flag(self):
+        Book.objects.create(
+            title="x", isbn=self.one.isbn, status=Book.Status.PENDING, uploaded_by=self.ali, book_file="books/files/x.pdf",
+        )
+        flags = {r["title"]: r["book_in_review"] for r in self.items()["results"]}
+        self.assertEqual(flags, {"یک نفر": True, "سه نفر": False})
+
+    def test_query_count_does_not_grow(self):
+        for i in range(8):
+            open_request(f"97800000002{i:02d}", "x", self.sara, self.ali)
+        self.client.force_authenticate(self.reza)
+        with self.assertNumQueries(2):
+            self.client.get(URL)
+
+
+class JoinRequestTests(APITestCase):
+    def setUp(self):
+        self.sara = make_user("sara")
+        self.ali = make_user("ali")
+        self.book_request = open_request("9780000000011", "کتاب", self.sara)
+
+    def join(self, user, pk=None):
+        self.client.force_authenticate(user)
+        return self.client.post(f"{URL}{pk or self.book_request.pk}/join/")
+
+    def test_join_then_join_again_creates_one_entry(self):
+        first = self.join(self.ali)
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(first.data["request"]["requester_count"], 2)
+        self.assertTrue(first.data["request"]["is_mine"])
+
+        second = self.join(self.ali)
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+        self.assertEqual(second.data["request"]["requester_count"], 2)
+        self.assertEqual(RequestEntry.objects.filter(request=self.book_request, requester=self.ali).count(), 1)
+        self.assertNotIn("email", str(second.data))
+
+    def test_anonymous_rejected(self):
+        response = self.client.post(f"{URL}{self.book_request.pk}/join/")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(RequestEntry.objects.count(), 1)
+
+    def test_not_open_anymore(self):
+        for new_status, reason in ((BookRequest.Status.FULFILLED, ""), (BookRequest.Status.REJECTED, "حق نشر")):
+            self.book_request.status, self.book_request.rejection_reason = new_status, reason
+            self.book_request.save()
+            response = self.join(self.ali)
+            self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+            self.assertEqual(response.data["result"], "not_open")
+            self.assertIn("دیگر باز نیست", response.data["message"])
+        self.assertEqual(RequestEntry.objects.count(), 1)
+
+    def test_missing_request(self):
+        self.assertEqual(self.join(self.ali, pk=999_999).status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_isbn_form_still_accepts_a_fulfilled_request(self):
+        # require_open is only for the public list; the ISBN form keeps its rules (5.6)
+        self.book_request.status = BookRequest.Status.FULFILLED
+        self.book_request.save()
+        outcome = submit_request(self.ali, isbn=self.book_request.isbn, title="x")
+        self.assertEqual(outcome.result, "requested")
+
+
+class ConcurrentJoinTests(TransactionTestCase):
+    def test_double_click_creates_one_entry(self):
+        sara, ali = make_user("sara"), make_user("ali")
+        book_request = open_request("9780000000011", "کتاب", sara)
+        barrier = threading.Barrier(2)
+        results = []
+
+        def worker():
+            try:
+                barrier.wait()
+                results.append(submit_request(
+                    ali, isbn=book_request.isbn, title=book_request.title, require_open=True,
+                ).result)
+            finally:
+                connection.close()
+
+        threads = [threading.Thread(target=worker) for _ in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+        self.assertEqual(sorted(results), ["already_requested", "requested"])
+        self.assertEqual(RequestEntry.objects.filter(request=book_request).count(), 2)

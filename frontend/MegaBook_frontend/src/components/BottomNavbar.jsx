@@ -28,12 +28,12 @@ const Downbar = () => {
                         سبد خرید
                     </span>
                 </Link>
-                <div className="flex flex-auto flex-col items-center">
+                <Link to="/requests" className="flex flex-auto flex-col items-center">
                     <PiSwap className='text-2xl' />
-                    <a href="#" class="text-xs">
+                    <span className="text-xs">
                         مبادله
-                    </a>
-                </div>
+                    </span>
+                </Link>
                 <Link to="/library" className="flex flex-auto flex-col items-center">
                     <LuLibrary className='text-2xl' />
                     <span className="text-xs">

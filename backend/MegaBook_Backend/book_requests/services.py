@@ -17,6 +17,8 @@ AVAILABLE = "available"
 IN_REVIEW = "in_review"
 REJECTED = "rejected"
 ALREADY_REQUESTED = "already_requested"
+# Only with require_open=True ("I want this too" on the public list)
+NOT_OPEN = "not_open"
 
 
 @dataclass
@@ -26,7 +28,7 @@ class SubmitOutcome:
     rejection_reason: str = ""  # فقط برای REJECTED
 
 
-def submit_request(user, *, isbn, title, authors="", cover_url="", notes=""):
+def submit_request(user, *, isbn, title, authors="", cover_url="", notes="", require_open=False):
     """درخواست کاربر برای یک شابک (۱۳ رقمیِ معتبر). همه‌چیز در یک تراکنش.
 
     ترتیب بررسی:
@@ -39,6 +41,10 @@ def submit_request(user, *, isbn, title, authors="", cover_url="", notes=""):
       ۶. درخواستی نیست                        -> BookRequest و RequestEntry ساخته می‌شوند
     ۵ و ۶ هر دو REQUESTED برمی‌گردانند تا معلوم نشود کس دیگری قبلاً درخواست داده یا نه.
     کتاب «رد شده» جلوی درخواست را نمی‌گیرد، چون دوباره قابل بارگذاری است (catalog.Book).
+
+    require_open=True (دکمه‌ی «من هم می‌خواهم» در لیست عمومی): فقط به درخواست «باز» می‌شود
+    پیوست. اگر وضعیت تا لحظه‌ی تأیید کاربر عوض شده باشد، NOT_OPEN برمی‌گردد. این بررسی بعد از
+    قفل ردیف است، پس مدیر نمی‌تواند بین بررسی و ساخته شدن RequestEntry وضعیت را عوض کند.
     """
     with transaction.atomic():
         book = Book.active_for_isbn(isbn)
@@ -58,6 +64,8 @@ def submit_request(user, *, isbn, title, authors="", cover_url="", notes=""):
             defaults={"title": title, "authors": authors, "cover_url": cover_url},
         )
 
+        if require_open and book_request.status != BookRequest.Status.OPEN:
+            return SubmitOutcome(NOT_OPEN)
         if book_request.status == BookRequest.Status.REJECTED:
             return SubmitOutcome(REJECTED, rejection_reason=book_request.rejection_reason)
 

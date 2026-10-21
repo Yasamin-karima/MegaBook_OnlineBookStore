@@ -404,8 +404,16 @@ function FoundBook({ book }) {
 
 /* ---------- فرم اصلی ---------- */
 
+// /books/new?isbn=9789643113445 (the exchange page's upload button): the ISBN field
+// starts filled in. Only the initial value; the user still presses "دریافت اطلاعات"
+// and every check runs as usual.
+function isbnFromUrl() {
+  const isbn = new URLSearchParams(window.location.search).get("isbn") ?? "";
+  return /^\d{13}$/.test(isbn) ? isbn : "";
+}
+
 export default function AddBookWizard({ onBack }) {
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [form, setForm] = useState(() => ({ ...EMPTY_FORM, isbn: isbnFromUrl() }));
   const [accepted, setAccepted] = useState(false);
   const [errors, setErrors] = useState({});
   const [status, setStatus] = useState("idle"); // idle | submitting | success

@@ -11,7 +11,9 @@ export default function LoginPage() {
   const navigate = useNavigate();
   // اگر ProtectedRoute کاربر را به اینجا فرستاده باشد، آدرس صفحه‌ی قبلی در state است
   const location = useLocation();
-  const redirectTo = location.state?.from?.pathname || "/";
+  // pathname + search: e.g. /books/new?isbn=… from the exchange page keeps its ISBN
+  const from = location.state?.from;
+  const redirectTo = from ? `${from.pathname}${from.search ?? ""}` : "/";
   // مقدار فیلدها (controlled inputs: مقدار هر input از state خوانده می‌شود)
   // identifier: email or mobile number; the backend tells them apart by "@"
   const [form, setForm] = useState({ identifier: "", password: "" });

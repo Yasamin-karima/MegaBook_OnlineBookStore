@@ -17,6 +17,7 @@ import LibraryPage from './components/LibraryPage';
 import BookReaderPage from './components/BookReaderPage';
 import DashboardPage from './components/DashboardPage';
 import ChangePasswordPage from './components/ChangePasswordPage';
+import PublicRequestsPage from './components/PublicRequestsPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import useGoBack from './hooks/useGoBack';
 
@@ -143,6 +144,8 @@ const App = () => {
           </ProtectedRoute>
         }
       />
+      {/* مبادله‌ی کتاب: لیست عمومی درخواست‌های باز؛ بدون ورود هم دیده می‌شود */}
+      <Route path="/requests" element={<PublicRequestsPage />} />
       {/* داشبورد: خلاصه‌ی حساب، کیف پول، سبد، درخواست‌ها و بارگذاری‌ها */}
       <Route
         path="/dashboard"

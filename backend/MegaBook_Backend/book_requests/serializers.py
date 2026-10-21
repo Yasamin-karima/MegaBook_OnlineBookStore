@@ -3,6 +3,8 @@ from rest_framework import serializers
 from catalog.isbn import ISBN_EMPTY, InvalidISBN, normalize_isbn
 from catalog.serializers import messages
 
+from .models import BookRequest
+
 NOTES_MAX = 500  # همان NOTE_MAX صفحه‌ی درخواست
 
 
@@ -33,3 +35,23 @@ class BookRequestCreateSerializer(serializers.Serializer):
             return normalize_isbn(value)
         except InvalidISBN as error:
             raise serializers.ValidationError(str(error))
+
+
+class PublicRequestSerializer(serializers.ModelSerializer):
+    """One open request on the public list.
+
+    The field list is explicit and holds nothing about requesters: no names, emails,
+    phones, user ids or notes. requester_count, is_mine and book_in_review are
+    annotated by the view's queryset (computed, never stored, DECISIONS 3.6).
+    """
+    cover = serializers.CharField(source="cover_url", read_only=True)
+    requester_count = serializers.IntegerField(read_only=True)
+    is_mine = serializers.BooleanField(read_only=True)
+    book_in_review = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = BookRequest
+        fields = [
+            "id", "isbn", "title", "authors", "cover", "created_at",
+            "requester_count", "is_mine", "book_in_review",
+        ]
