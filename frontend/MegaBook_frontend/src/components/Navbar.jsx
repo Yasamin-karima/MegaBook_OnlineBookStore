@@ -7,7 +7,7 @@ import { isLoggedIn } from '../api/auth'
 const Navbar = () => {
     const loggedIn = isLoggedIn()
     return (
-        <nav class="flex z-10 justify-between fixed inset-x-0 top-0 h-16 bg-[#f9fcfc] rounded-3xl">
+        <nav className="flex md:hidden z-10 justify-between fixed inset-x-0 top-0 h-16 bg-[#f9fcfc] rounded-3xl">
             <div className="flex items-center pr-4">
                 <img src={logo} className='block-20 justify-end' />
             </div>

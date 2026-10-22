@@ -9,7 +9,7 @@ const Downbar = () => {
     // The same count as every other cart badge (CartProvider)
     const { count } = useCart()
     return (
-        <nav className='flex z-10 justify-center fixed inset-x-0 bottom-0 h-14 bg-white rounded-3xl text-gray-500'>
+        <nav className='flex md:hidden z-10 justify-center fixed inset-x-0 bottom-0 h-14 bg-white rounded-3xl text-gray-500'>
             <div class="w-full flex items-center">
                 <Link to="/dashboard" className="flex flex-auto flex-col items-center">
                     <LuUser className='text-2xl' />

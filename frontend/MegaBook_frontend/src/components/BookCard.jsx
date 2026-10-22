@@ -40,9 +40,9 @@ const BookCard = ({ id, title, author, price, image, badge, isOwned = false }) =
   const showImage = image && !imageFailed;
 
   return (
-    <div className="relative w-64 bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow duration-300">
+    <div className="relative w-full h-full bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow duration-300">
       {/* Book Cover Image */}
-      <div className="relative h-80 bg-gray-200">
+      <div className="relative aspect-[4/5] bg-gray-200">
         {showImage ? (
           <img
             src={image}

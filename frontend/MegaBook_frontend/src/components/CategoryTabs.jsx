@@ -12,7 +12,7 @@ const CategoryTabs = ({ categories, activeId, onSelect, status, onRetry }) => {
 
   return (
     <div className="w-full bg-white border-b border-gray-200">
-      <div className="flex overflow-x-auto gap-2 px-4 py-3 items-center">
+      <div className="flex overflow-x-auto md:flex-wrap gap-2 px-4 py-3 items-center">
         {tabs.map((category) => (
           <button
             key={category.id ?? 'all'}
