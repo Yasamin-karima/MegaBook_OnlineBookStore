@@ -272,7 +272,7 @@ export default function WalletPage({ onBack }) {
 
   return (
     <div dir="rtl" className="min-h-screen bg-gray-100 pb-12">
-      <div className="mx-auto w-full max-w-md">
+      <div className="mx-auto w-full max-w-md md:max-w-2xl lg:max-w-6xl">
         {/* ═══ نوار بالا ═══ */}
         <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-gray-200 bg-gray-100/90 px-2 backdrop-blur">
           <button
@@ -285,17 +285,22 @@ export default function WalletPage({ onBack }) {
           </button>
           <h1 className="text-base font-bold text-gray-900">کیف پول</h1>
           {/* 🔌 صفحهٔ اعلان‌ها هنوز ساخته نشده: <Link to="/notifications"> */}
+          {/* md+: the side nav has the bell; invisible keeps the title centred */}
           <a
             href="/notifications"
             aria-label="اعلان‌ها"
-            className="flex h-10 w-10 items-center justify-center rounded-xl text-xl hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600/40"
+            className="flex h-10 w-10 items-center justify-center rounded-xl text-xl hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600/40 md:invisible"
           >
             🔔
           </a>
         </header>
 
+        {/* md: one wider column. lg+: two columns, right (RTL start) balance and top-up, left
+            requests and transactions. Below md both wrappers are plain blocks. */}
+        <div className="md:px-6 lg:grid lg:grid-cols-[22rem_minmax(0,1fr)] lg:items-start lg:gap-6 xl:grid-cols-[24rem_minmax(0,1fr)]">
+        <div>
         {/* ═══ کارت موجودی ═══ */}
-        <section className="relative mx-4 mt-4 overflow-hidden rounded-3xl bg-blue-600 p-6 text-white shadow-lg shadow-blue-600/20">
+        <section className="relative mx-4 mt-4 md:mx-0 overflow-hidden rounded-3xl bg-blue-600 p-6 text-white shadow-lg shadow-blue-600/20">
           {/* همان دایره‌های تزئینی سربرگ صفحه‌های ورود و ثبت‌نام */}
           <div className="absolute -left-6 top-4 h-24 w-24 rounded-full border-4 border-white/10" />
           <div className="absolute left-16 -top-8 h-20 w-20 rounded-full border-4 border-white/10" />
@@ -337,7 +342,7 @@ export default function WalletPage({ onBack }) {
         </section>
 
         {/* ═══ شارژ کیف پول ═══ */}
-        <section className="mx-4 mt-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+        <section className="mx-4 mt-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm md:mx-0">
           <h2 className="text-base font-bold text-gray-900">شارژ کیف پول</h2>
 
           {/* مبلغ‌های پیشنهادی */}
@@ -422,12 +427,16 @@ export default function WalletPage({ onBack }) {
             شارژ با کارت‌به‌کارت
           </button>
         </section>
+        </div>
+
+        {/* The first section's top margin matches the balance card beside it */}
+        <div className="lg:min-w-0 lg:[&>:first-child]:mt-4">
 
         {/* ═══ درخواست‌های من (شارژ کارت‌به‌کارت و برداشت) ═══ */}
         {requests.length > 0 && (
           <section className="mt-6">
-            <h2 className="px-4 text-lg font-bold text-gray-900">درخواست‌های من</h2>
-            <ul className="mx-4 mt-3 divide-y divide-gray-100 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+            <h2 className="px-4 text-lg font-bold text-gray-900 md:px-0">درخواست‌های من</h2>
+            <ul className="mx-4 mt-3 divide-y divide-gray-100 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm md:mx-0">
               {requests.map((r) => (
                 <RequestRow key={`${r.kind}-${r.id}`} request={r} />
               ))}
@@ -437,10 +446,10 @@ export default function WalletPage({ onBack }) {
 
         {/* ═══ تراکنش‌ها ═══ */}
         <section className="mt-6">
-          <h2 className="px-4 text-lg font-bold text-gray-900">تراکنش‌ها</h2>
+          <h2 className="px-4 text-lg font-bold text-gray-900 md:px-0">تراکنش‌ها</h2>
 
           {/* فیلترها؛ روی صفحهٔ باریک افقی اسکرول می‌شوند */}
-          <div className="mt-3 flex gap-2 overflow-x-auto px-4 pb-1" role="tablist" aria-label="نوع تراکنش">
+          <div className="mt-3 flex gap-2 overflow-x-auto px-4 pb-1 md:flex-wrap md:px-0" role="tablist" aria-label="نوع تراکنش">
             {FILTERS.map((f) => (
               <button
                 key={f.key}
@@ -459,7 +468,7 @@ export default function WalletPage({ onBack }) {
             ))}
           </div>
 
-          <div className="mx-4 mt-3">
+          <div className="mx-4 mt-3 md:mx-0">
             {listStatus === "loading" && <ListSkeleton />}
 
             {listStatus === "error" && (
@@ -509,9 +518,11 @@ export default function WalletPage({ onBack }) {
             )}
           </div>
         </section>
+        </div>
+        </div>
       </div>
 
-      {/* ═══ پنل‌های پایین صفحه ═══ */}
+      {/* ═══ پنل‌های پایین صفحه (md+: پنجرهٔ وسط صفحه) ═══ */}
       {sheet === "withdraw" && (
         <Sheet title="برداشت موجودی" onClose={() => setSheet(null)}>
           <WithdrawForm
@@ -923,7 +934,7 @@ function ListSkeleton() {
   );
 }
 
-// پنلی که از پایین صفحه بالا می‌آید (bottom sheet)
+// پنلی که از پایین صفحه بالا می‌آید (bottom sheet). md+: a centred dialog instead.
 function Sheet({ title, onClose, children }) {
   // بستن با کلید Escape
   useEffect(() => {
@@ -933,16 +944,17 @@ function Sheet({ title, onClose, children }) {
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-30 flex items-end justify-center" dir="rtl">
+    <div className="fixed inset-0 z-30 flex items-end justify-center md:items-center md:p-6" dir="rtl">
       {/* پس‌زمینهٔ تیره؛ کلیک رویش پنل را می‌بندد */}
       <div className="absolute inset-0 bg-gray-900/40" onClick={onClose} aria-hidden="true" />
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="sheet-title"
-        className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-white p-6 pb-8 shadow-xl"
+        className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-white p-6 pb-8 shadow-xl md:rounded-3xl md:pb-6"
       >
-        <div className="mx-auto mb-4 h-1.5 w-10 rounded-full bg-gray-200" aria-hidden="true" />
+        {/* The drag handle only means something on a bottom sheet */}
+        <div className="mx-auto mb-4 h-1.5 w-10 rounded-full bg-gray-200 md:hidden" aria-hidden="true" />
         <div className="mb-3 flex items-center justify-between">
           <h2 id="sheet-title" className="text-lg font-bold text-gray-900">
             {title}

@@ -192,13 +192,15 @@ export default function PublicRequestsPage() {
 
   return (
     <div dir="rtl" className="min-h-screen bg-gray-100 pb-12">
-      <div className="mx-auto w-full max-w-md">
+      {/* md+: the full width beside the side nav; the request cards go into a grid */}
+      <div className="mx-auto w-full max-w-md md:max-w-none">
         {/* ═══ نوار بالا ═══ */}
-        <header className="sticky top-0 z-20 flex h-14 items-center gap-1 border-b border-gray-200 bg-gray-100/90 px-2 backdrop-blur">
+        <header className="sticky top-0 z-20 flex h-14 items-center gap-1 border-b border-gray-200 bg-gray-100/90 px-2 backdrop-blur md:px-6">
+          {/* md+: hidden, the side nav already links to the store */}
           <Link
             to="/"
             aria-label="بازگشت به فروشگاه"
-            className="flex h-10 w-10 items-center justify-center rounded-xl text-xl text-gray-700 hover:bg-gray-200"
+            className="flex h-10 w-10 items-center justify-center rounded-xl text-xl text-gray-700 hover:bg-gray-200 md:hidden"
           >
             →
           </Link>
@@ -208,12 +210,12 @@ export default function PublicRequestsPage() {
         {/* ═══ معرفی و دو اقدام اصلی ═══
             در طرح Visily دو دکمهٔ تمام‌عرض با رنگ‌های کم‌کنتراست بود. اینجا
             کنار هم‌اند: درخواست (اقدام اصلی، آبی) و بارگذاری (اقدام دوم، سفید). */}
-        <section className="mx-4 mt-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-sm leading-7 text-gray-600">
+        <section className="mx-4 mt-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm md:mx-6 md:mt-6 md:p-5">
+          <p className="text-sm leading-7 text-gray-600 md:max-w-3xl">
             کتاب‌هایی که کاربران می‌خواهند و هنوز در مگابوک نیست. اگر یکی از آن‌ها را دارید،
             بارگذاری کنید و پس از تأیید، از هر فروشش سهم بگیرید.
           </p>
-          <div className="mt-4 grid grid-cols-2 gap-2">
+          <div className="mt-4 grid grid-cols-2 gap-2 md:max-w-md">
             <Link
               to="/requests/new"
               className="flex h-11 items-center justify-center gap-1.5 rounded-xl bg-blue-600 text-sm font-semibold text-white shadow-md shadow-blue-600/20 hover:bg-blue-700 focus:outline-none focus-visible:ring-4 focus-visible:ring-blue-600/30"
@@ -234,7 +236,7 @@ export default function PublicRequestsPage() {
           {isLoggedIn() && (
             <Link
               to="/dashboard/my-items?tab=requests"
-              className="mt-3 flex h-11 items-center justify-between rounded-xl bg-gray-50 px-4 text-sm font-semibold text-gray-800 ring-1 ring-gray-200 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600/50"
+              className="mt-3 flex h-11 items-center justify-between rounded-xl bg-gray-50 px-4 text-sm font-semibold text-gray-800 ring-1 ring-gray-200 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600/50 md:max-w-md"
             >
               <span className="flex items-center gap-2">
                 <span aria-hidden="true">📋</span>
@@ -246,8 +248,9 @@ export default function PublicRequestsPage() {
         </section>
 
         {/* ═══ جستجو و مرتب‌سازی ═══ */}
-        <section className="mx-4 mt-4">
-          <div className="relative">
+        {/* lg+: search and sort on one row */}
+        <section className="mx-4 mt-4 md:mx-6 md:mt-6 lg:flex lg:items-center lg:gap-6">
+          <div className="relative md:w-full md:max-w-xl">
             <label htmlFor="search" className="sr-only">
               جستجو در درخواست‌ها
             </label>
@@ -264,7 +267,7 @@ export default function PublicRequestsPage() {
             />
           </div>
 
-          <div className="mt-3 flex items-center justify-between">
+          <div className="mt-3 flex items-center justify-between lg:mt-0 lg:flex-1 lg:gap-4">
             <p className="text-sm text-gray-500" aria-live="polite">
               {current?.status !== "ready"
                 ? " "
@@ -291,7 +294,7 @@ export default function PublicRequestsPage() {
         </section>
 
         {/* ═══ لیست درخواست‌ها ═══ */}
-        <main className="mx-4 mt-3">
+        <main className="mx-4 mt-3 md:mx-6 md:mt-4">
           {loading && <ListSkeleton />}
 
           {current?.status === "error" && (
@@ -308,7 +311,7 @@ export default function PublicRequestsPage() {
           )}
 
           {current?.status === "ready" && requests.length === 0 && (
-            <div className="flex flex-col items-center rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center">
+            <div className="flex flex-col items-center rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center md:mx-auto md:max-w-lg">
               <span className="text-4xl" aria-hidden="true">{isSearching ? "🔎" : "📭"}</span>
               <p className="mt-3 text-sm leading-7 text-gray-500">
                 {isSearching
@@ -325,7 +328,7 @@ export default function PublicRequestsPage() {
           )}
 
           {requests.length > 0 && (
-            <ul className="space-y-3">
+            <ul className="space-y-3 md:grid md:grid-cols-2 md:gap-4 md:space-y-0 xl:grid-cols-3">
               {requests.map((r) => (
                 <RequestCard
                   key={r.id}
@@ -342,7 +345,7 @@ export default function PublicRequestsPage() {
               type="button"
               onClick={handleLoadMore}
               disabled={loadingMore}
-              className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-gray-300 text-sm font-semibold text-gray-600 hover:bg-white disabled:cursor-wait"
+              className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-gray-300 text-sm font-semibold text-gray-600 hover:bg-white disabled:cursor-wait md:mx-auto md:mt-6 md:max-w-xs"
             >
               {loadingMore && (
                 <span className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
@@ -382,8 +385,9 @@ function RequestCard({ request: r, onCopyIsbn, onJoin }) {
   const [coverFailed, setCoverFailed] = useState(false);
 
   return (
-    <li className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-      <div className="flex gap-3">
+    // md+: a grid cell; flex-col with the buttons pushed down, so cards in a row line up
+    <li className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm md:flex md:flex-col">
+      <div className="flex gap-3 md:mb-auto">
         {/* جلد از Open Library؛ اگر نبود یا بارگذاری نشد، جایگزین آبی */}
         {r.cover && !coverFailed ? (
           <img
@@ -566,7 +570,7 @@ function ConfirmJoinDialog({ request: r, busy, onConfirm, onCancel }) {
 
 function ListSkeleton() {
   return (
-    <ul className="animate-pulse space-y-3" aria-busy="true" aria-label="در حال بارگذاری">
+    <ul className="animate-pulse space-y-3 md:grid md:grid-cols-2 md:gap-4 md:space-y-0 xl:grid-cols-3" aria-busy="true" aria-label="در حال بارگذاری">
       {[0, 1, 2].map((i) => (
         <li key={i} className="rounded-2xl border border-gray-200 bg-white p-4">
           <div className="flex gap-3">

@@ -134,14 +134,16 @@ export default function LibraryPage() {
 
   return (
     <div dir="rtl" className="min-h-screen bg-gray-100 pb-12">
-      <div className="mx-auto w-full max-w-md">
+      {/* md+: the full width beside the side nav, so the grid gets more columns */}
+      <div className="mx-auto w-full max-w-md md:max-w-none">
         {/* ═══ نوار بالا ═══ */}
         <header className="sticky top-0 z-20 border-b border-gray-200 bg-gray-100/90 backdrop-blur">
-          <div className="flex h-14 items-center gap-1 px-2">
+          <div className="flex h-14 items-center gap-1 px-2 md:px-6">
+            {/* md+: hidden, the side nav already links to the store */}
             <Link
               to="/"
               aria-label="بازگشت به فروشگاه"
-              className="flex h-10 w-10 items-center justify-center rounded-xl text-xl text-gray-700 hover:bg-gray-200"
+              className="flex h-10 w-10 items-center justify-center rounded-xl text-xl text-gray-700 hover:bg-gray-200 md:hidden"
             >
               →
             </Link>
@@ -151,8 +153,8 @@ export default function LibraryPage() {
           {/* ═══ تب‌ها، با شمارنده ═══
               در طرح Visily سه کارت آمار جدا بالای تب‌ها بود که همان عددها را
               تکرار می‌کرد؛ عددها را داخل خود تب‌ها گذاشتیم. */}
-          <div className="px-4 pb-3">
-            <div role="tablist" aria-label="بخش‌های کتابخانه" className="grid grid-cols-3 gap-1 rounded-xl bg-gray-200/70 p-1">
+          <div className="px-4 pb-3 md:px-6">
+            <div role="tablist" aria-label="بخش‌های کتابخانه" className="grid grid-cols-3 gap-1 rounded-xl bg-gray-200/70 p-1 md:max-w-md">
               {TABS.map((t) => {
                 const active = tab === t.key;
                 return (
@@ -184,12 +186,12 @@ export default function LibraryPage() {
           </div>
         </header>
 
-        <main className="px-4 pt-4">
+        <main className="px-4 pt-4 md:px-6 md:pt-6">
           {/* دکمهٔ بارگذاری کتاب جدید فقط در تب «بارگذاری‌شده» */}
           {tab === "uploaded" && (
             <Link
               to="/books/new"
-              className="mb-4 flex h-12 items-center justify-center gap-2 rounded-xl border-2 border-dashed border-blue-300 text-sm font-semibold text-blue-700 hover:bg-blue-50"
+              className="mb-4 flex h-12 items-center justify-center gap-2 rounded-xl border-2 border-dashed border-blue-300 text-sm font-semibold text-blue-700 hover:bg-blue-50 md:w-fit md:px-8"
             >
               <span aria-hidden="true">＋</span>
               بارگذاری کتاب جدید
@@ -214,7 +216,7 @@ export default function LibraryPage() {
           {(status === "ready" || status === "more") && books.length === 0 && <EmptyState tab={tab} />}
 
           {status !== "loading" && books.length > 0 && (
-            <ul className="grid grid-cols-2 gap-3">
+            <ul className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-5 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
               {books.map((book) => (
                 <li key={book.id}>
                   {tab === "purchased" && <PurchasedCard book={book} />}
@@ -230,7 +232,7 @@ export default function LibraryPage() {
               type="button"
               onClick={handleLoadMore}
               disabled={status === "more"}
-              className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-gray-300 text-sm font-semibold text-gray-600 hover:bg-white disabled:cursor-wait"
+              className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-gray-300 text-sm font-semibold text-gray-600 hover:bg-white disabled:cursor-wait md:mx-auto md:mt-6 md:max-w-xs"
             >
               {status === "more" && (
                 <span className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
@@ -363,7 +365,7 @@ function EmptyState({ tab }) {
   }[tab];
 
   return (
-    <div className="flex flex-col items-center rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center">
+    <div className="flex flex-col items-center rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center md:mx-auto md:max-w-lg">
       <span className="text-4xl" aria-hidden="true">{content.icon}</span>
       <p className="mt-3 text-sm leading-7 text-gray-500">{content.text}</p>
       {content.cta && (
@@ -380,7 +382,7 @@ function EmptyState({ tab }) {
 
 function GridSkeleton() {
   return (
-    <ul className="grid animate-pulse grid-cols-2 gap-3" aria-busy="true" aria-label="در حال بارگذاری">
+    <ul className="grid animate-pulse grid-cols-2 gap-3 md:grid-cols-3 md:gap-5 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6" aria-busy="true" aria-label="در حال بارگذاری">
       {[0, 1, 2, 3].map((i) => (
         <li key={i} className="rounded-2xl border border-gray-200 bg-white">
           <div className="aspect-[2/3] rounded-t-2xl bg-gray-200" />

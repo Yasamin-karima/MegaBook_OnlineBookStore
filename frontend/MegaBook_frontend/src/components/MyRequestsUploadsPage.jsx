@@ -167,10 +167,11 @@ export default function MyRequestsUploadsPage() {
 
   return (
     <div dir="rtl" className="min-h-screen bg-gray-100 pb-12">
-      <div className="mx-auto w-full max-w-md">
+      {/* md+: the full width beside the side nav; the cards go into a grid */}
+      <div className="mx-auto w-full max-w-md md:max-w-none">
         {/* ═══ نوار بالا و تب‌ها ═══ */}
         <header className="sticky top-0 z-20 border-b border-gray-200 bg-gray-100/90 backdrop-blur">
-          <div className="flex h-14 items-center justify-between px-2">
+          <div className="flex h-14 items-center justify-between px-2 md:px-4">
             <button
               type="button"
               onClick={goBack}
@@ -190,8 +191,8 @@ export default function MyRequestsUploadsPage() {
             </Link>
           </div>
 
-          <div className="px-4 pb-3">
-            <div role="tablist" className="grid grid-cols-2 gap-1 rounded-xl bg-gray-200/70 p-1">
+          <div className="px-4 pb-3 md:px-6">
+            <div role="tablist" className="grid grid-cols-2 gap-1 rounded-xl bg-gray-200/70 p-1 md:max-w-md">
               {TABS.map((x) => {
                 const active = tab === x.key;
                 const n = unread?.[x.key] ?? 0;
@@ -221,8 +222,9 @@ export default function MyRequestsUploadsPage() {
         </header>
 
         {/* ═══ جستجو و فیلتر وضعیت ═══ */}
-        <section className="px-4 pt-4">
-          <div className="relative">
+        {/* lg+: search and the status filters on one row */}
+        <section className="px-4 pt-4 md:px-6 md:pt-6 lg:flex lg:items-center lg:gap-4">
+          <div className="relative md:w-full md:max-w-md lg:max-w-xs xl:max-w-md">
             <label htmlFor="search" className="sr-only">جستجو</label>
             <span aria-hidden="true" className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
             <input
@@ -236,7 +238,7 @@ export default function MyRequestsUploadsPage() {
             />
           </div>
 
-          <div className="-mx-4 mt-3 flex gap-2 overflow-x-auto px-4 pb-1" role="group" aria-label="فیلتر وضعیت">
+          <div className="-mx-4 mt-3 flex gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:flex-wrap md:px-0 lg:mt-0 lg:pb-0" role="group" aria-label="فیلتر وضعیت">
             {STATUS_FILTERS[tab].map((f) => (
               <button
                 key={f.key}
@@ -254,7 +256,7 @@ export default function MyRequestsUploadsPage() {
         </section>
 
         {/* ═══ لیست ═══ */}
-        <main className="mx-4 mt-3">
+        <main className="mx-4 mt-3 md:mx-6 md:mt-4">
           {!current && <ListSkeleton />}
 
           {current?.status === "error" && (
@@ -284,7 +286,7 @@ export default function MyRequestsUploadsPage() {
               {filtered && (
                 <p className="mb-2 text-sm text-gray-500" aria-live="polite">{toFaNumber(current.count)} مورد</p>
               )}
-              <ul className="space-y-3">
+              <ul className="space-y-3 md:grid md:grid-cols-2 md:gap-4 md:space-y-0 xl:grid-cols-3">
                 {items.map((item) => (
                   <ItemCard key={item.id} item={item} tab={tab} />
                 ))}
@@ -297,7 +299,7 @@ export default function MyRequestsUploadsPage() {
               type="button"
               onClick={handleLoadMore}
               disabled={loadingMore}
-              className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-gray-300 text-sm font-semibold text-gray-600 hover:bg-white disabled:cursor-wait"
+              className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-gray-300 text-sm font-semibold text-gray-600 hover:bg-white disabled:cursor-wait md:mx-auto md:mt-6 md:max-w-xs"
             >
               {loadingMore && <span className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />}
               {loadingMore ? "در حال بارگذاری…" : "نمایش موارد بیشتر"}
@@ -325,13 +327,13 @@ function ItemCard({ item, tab }) {
 
   return (
     <li
-      className={`overflow-hidden rounded-2xl border bg-white shadow-sm ${
+      className={`overflow-hidden rounded-2xl border bg-white shadow-sm md:flex md:flex-col ${
         hasUnread ? "border-blue-200 ring-1 ring-blue-100" : "border-gray-200"
       }`}
     >
       <Link
         to={href}
-        className="flex gap-3 p-4 transition-colors hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600/50"
+        className="flex gap-3 p-4 transition-colors hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600/50 md:flex-1"
       >
         {item.cover ? (
           <img src={item.cover} alt="" className="h-20 w-14 shrink-0 rounded-md object-cover ring-1 ring-black/5" />
@@ -398,7 +400,7 @@ function ItemCard({ item, tab }) {
 function EmptyState({ tab, filtered, onClear }) {
   if (filtered) {
     return (
-      <div className="flex flex-col items-center rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-10 text-center">
+      <div className="flex flex-col items-center rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-10 text-center md:mx-auto md:max-w-lg">
         <span className="text-3xl" aria-hidden="true">🔎</span>
         <p className="mt-2 text-sm text-gray-500">موردی با این فیلتر پیدا نشد.</p>
         <button type="button" onClick={onClear} className="mt-4 rounded-xl px-4 py-2 text-sm font-semibold text-blue-600 hover:bg-blue-50">
@@ -412,7 +414,7 @@ function EmptyState({ tab, filtered, onClear }) {
       ? { icon: "📮", text: "هنوز کتابی درخواست نداده‌اید. در صفحهٔ مبادله ببینید دیگران چه کتاب‌هایی خواسته‌اند، یا کتابی را که پیدا نمی‌کنید درخواست دهید.", cta: "رفتن به مبادلهٔ کتاب", href: "/requests" }
       : { icon: "📤", text: "هنوز کتابی بارگذاری نکرده‌اید. کتاب خود را بارگذاری کنید و از هر فروش سهم بگیرید.", cta: "بارگذاری کتاب", href: "/books/new" };
   return (
-    <div className="flex flex-col items-center rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center">
+    <div className="flex flex-col items-center rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center md:mx-auto md:max-w-lg">
       <span className="text-4xl" aria-hidden="true">{c.icon}</span>
       <p className="mt-3 text-sm leading-7 text-gray-500">{c.text}</p>
       <Link to={c.href} className="mt-5 flex h-11 items-center justify-center rounded-xl bg-blue-600 px-6 text-sm font-semibold text-white hover:bg-blue-700">
@@ -424,7 +426,7 @@ function EmptyState({ tab, filtered, onClear }) {
 
 function ListSkeleton() {
   return (
-    <ul className="animate-pulse space-y-3" aria-busy="true" aria-label="در حال بارگذاری">
+    <ul className="animate-pulse space-y-3 md:grid md:grid-cols-2 md:gap-4 md:space-y-0 xl:grid-cols-3" aria-busy="true" aria-label="در حال بارگذاری">
       {[0, 1, 2].map((i) => (
         <li key={i} className="flex gap-3 rounded-2xl border border-gray-200 bg-white p-4">
           <div className="h-20 w-14 rounded-md bg-gray-200" />

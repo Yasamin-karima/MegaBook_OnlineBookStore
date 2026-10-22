@@ -71,14 +71,15 @@ export default function DashboardPage() {
 
   return (
     <div dir="rtl" className="min-h-screen bg-gray-100 pb-12">
-      <div className="mx-auto w-full max-w-md">
+      <div className="mx-auto w-full max-w-md md:max-w-5xl">
         {/* ═══ نوار بالا ═══
             زنگ اعلان‌ها برداشته شد: اعلان‌ها هنوز بک‌اند ندارند. */}
-        <header className="sticky top-0 z-20 flex h-14 items-center gap-1 border-b border-gray-200 bg-gray-100/90 px-2 backdrop-blur">
+        <header className="sticky top-0 z-20 flex h-14 items-center gap-1 border-b border-gray-200 bg-gray-100/90 px-2 backdrop-blur md:px-6">
+          {/* md+: hidden, the side nav already links to the store */}
           <Link
             to="/"
             aria-label="بازگشت به فروشگاه"
-            className="flex h-10 w-10 items-center justify-center rounded-xl text-xl text-gray-700 hover:bg-gray-200"
+            className="flex h-10 w-10 items-center justify-center rounded-xl text-xl text-gray-700 hover:bg-gray-200 md:hidden"
           >
             →
           </Link>
@@ -88,7 +89,7 @@ export default function DashboardPage() {
         {status === "loading" && <DashboardSkeleton />}
 
         {status === "error" && (
-          <div className="mx-4 mt-8 rounded-2xl border border-gray-200 bg-white p-8 text-center shadow-sm">
+          <div className="mx-4 mt-8 rounded-2xl border border-gray-200 bg-white p-8 text-center shadow-sm md:mx-auto md:max-w-md">
             <div className="mb-3 text-4xl">⚠️</div>
             <h2 className="text-lg font-bold text-gray-900">داشبورد بارگذاری نشد</h2>
             <p className="mt-2 text-sm text-gray-500">اتصال اینترنت را بررسی کنید.</p>
@@ -102,12 +103,14 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {/* md+: two columns. Right (RTL start): profile and wallet, cart, account menu.
+            Left: the request and upload stats, spanning all three rows. Below md this is a plain block. */}
         {status === "ready" && (
-          <>
+          <div className="md:grid md:grid-cols-2 md:grid-rows-[auto_auto_1fr] md:gap-x-6 md:px-6">
             {/* ═══ کارت پروفایل و کیف پول ═══
                 کیف پول داخل همین کارت آبی آمده، چون مهم‌ترین عدد داشبورد است.
                 در طرح Visily یک کارت سفید جدا زیر پروفایل بود. */}
-            <section className="relative mx-4 mt-4 overflow-hidden rounded-3xl bg-blue-600 text-white shadow-lg shadow-blue-600/20">
+            <section className="relative mx-4 mt-4 overflow-hidden rounded-3xl bg-blue-600 text-white shadow-lg shadow-blue-600/20 md:col-start-1 md:row-start-1 md:mx-0">
               <div className="absolute -left-6 top-4 h-24 w-24 rounded-full border-4 border-white/10" />
               <div className="absolute left-16 -top-8 h-20 w-20 rounded-full border-4 border-white/10" />
 
@@ -164,7 +167,7 @@ export default function DashboardPage() {
             {/* ═══ سبد خرید ═══ */}
             <Link
               to="/cart"
-              className="mx-4 mt-4 flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600/40"
+              className="mx-4 mt-4 flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600/40 md:col-start-1 md:row-start-2 md:mx-0"
             >
               <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-50 text-xl" aria-hidden="true">
                 🛒
@@ -183,6 +186,8 @@ export default function DashboardPage() {
               </span>
             </Link>
 
+            {/* The first section's top margin matches the profile card beside it */}
+            <div className="md:col-start-2 md:row-span-3 md:row-start-1 md:[&>:first-child]:mt-4">
             {/* ═══ درخواست‌های من ═══
                 هر کاشی به «درخواست‌ها و آپلودهای من» با همان فیلتر وضعیت می‌رود. عددها و آن
                 لیست از یک منطق شمارش در سرور می‌آیند، پس هیچ‌وقت با هم فرق ندارند. */}
@@ -234,10 +239,11 @@ export default function DashboardPage() {
                 </div>
               </div>
             </StatSection>
+            </div>
 
             {/* ═══ حساب کاربری ═══
                 «درخواست پشتیبانی» برداشته شد: پشتیبانی هنوز بک‌اند ندارد. */}
-            <section className="mx-4 mt-6">
+            <section className="mx-4 mt-6 md:col-start-1 md:row-start-3 md:mx-0 md:self-start">
               <h2 className="mb-2 text-base font-bold text-gray-900">حساب کاربری</h2>
               <div className="divide-y divide-gray-100 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
                 <MenuLink to="/account" icon="👤" label="ویرایش اطلاعات حساب" />
@@ -283,7 +289,7 @@ export default function DashboardPage() {
                 )}
               </div>
             </section>
-          </>
+          </div>
         )}
       </div>
     </div>
@@ -307,7 +313,7 @@ function StatSection({ title, stats, statHref, action, empty, children }) {
   const total = stats.reduce((sum, s) => sum + s.value, 0);
 
   return (
-    <section className="mx-4 mt-6">
+    <section className="mx-4 mt-6 md:mx-0">
       <div className="mb-2 flex items-center justify-between">
         <h2 className="text-base font-bold text-gray-900">{title}</h2>
         {total > 0 && action && (
@@ -387,7 +393,7 @@ function MenuLink({ to, icon, label }) {
 
 function DashboardSkeleton() {
   return (
-    <div className="animate-pulse px-4 pt-4" aria-busy="true" aria-label="در حال بارگذاری">
+    <div className="animate-pulse px-4 pt-4 md:px-6" aria-busy="true" aria-label="در حال بارگذاری">
       <div className="h-40 rounded-3xl bg-gray-300" />
       <div className="mt-4 h-20 rounded-2xl bg-gray-200" />
       {[0, 1].map((i) => (
