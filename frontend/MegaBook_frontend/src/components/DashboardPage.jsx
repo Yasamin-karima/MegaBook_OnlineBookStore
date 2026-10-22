@@ -184,16 +184,17 @@ export default function DashboardPage() {
             </Link>
 
             {/* ═══ درخواست‌های من ═══
-                صفحهٔ «درخواست‌های من» هنوز نیست؛ کاشی‌ها فعلاً فقط عددند (TODO: لینک به
-                /requests?status=… وقتی آن صفحه ساخته شد). */}
+                هر کاشی به «درخواست‌ها و آپلودهای من» با همان فیلتر وضعیت می‌رود. عددها و آن
+                لیست از یک منطق شمارش در سرور می‌آیند، پس هیچ‌وقت با هم فرق ندارند. */}
             <StatSection
               title="درخواست‌های من"
               stats={[
-                { key: "open", label: "در انتظار تأمین", value: data.requests.open, tone: "amber" },
-                { key: "fulfilled", label: "تأمین‌شده", value: data.requests.fulfilled, tone: "green" },
-                { key: "rejected", label: "ردشده", value: data.requests.rejected, tone: "red" },
+                { key: "open", label: "در جریان", value: data.requests.open, tone: "amber" },
+                { key: "fulfilled", label: "تأمین شده", value: data.requests.fulfilled, tone: "green" },
+                { key: "rejected", label: "رد شده", value: data.requests.rejected, tone: "red" },
               ]}
-              action={{ text: "درخواست تازه", href: "/requests/new" }}
+              statHref={(key) => `/dashboard/my-items?tab=requests&status=${key}`}
+              action={{ text: "مشاهدهٔ همه ‹", href: "/dashboard/my-items?tab=requests" }}
               empty={{
                 text: "هنوز کتابی درخواست نداده‌اید.",
                 cta: "درخواست با شابک",
@@ -209,12 +210,11 @@ export default function DashboardPage() {
               title="آپلودهای من"
               stats={[
                 { key: "pending", label: "در انتظار تأیید", value: data.uploads.pending, tone: "amber" },
-                { key: "approved", label: "در فروشگاه", value: data.uploads.approved, tone: "green" },
-                { key: "rejected", label: "ردشده", value: data.uploads.rejected, tone: "red" },
+                { key: "approved", label: "تأیید شده", value: data.uploads.approved, tone: "green" },
+                { key: "rejected", label: "رد شده", value: data.uploads.rejected, tone: "red" },
               ]}
-              // صفحهٔ کتابخانه فعلاً فیلتر وضعیت ندارد؛ همهٔ کاشی‌ها به تب بارگذاری‌شده می‌روند
-              statHref={() => "/library?tab=uploaded"}
-              action={{ text: "مشاهدهٔ همه ‹", href: "/library?tab=uploaded" }}
+              statHref={(key) => `/dashboard/my-items?tab=uploads&status=${key}`}
+              action={{ text: "مشاهدهٔ همه ‹", href: "/dashboard/my-items?tab=uploads" }}
               empty={{
                 text: "هنوز کتابی بارگذاری نکرده‌اید.",
                 cta: "بارگذاری کتاب",

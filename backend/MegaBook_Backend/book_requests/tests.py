@@ -452,3 +452,154 @@ class ConcurrentJoinTests(TransactionTestCase):
             t.join(timeout=30)
         self.assertEqual(sorted(results), ["already_requested", "requested"])
         self.assertEqual(RequestEntry.objects.filter(request=book_request).count(), 2)
+
+
+# ---------------------------------------------------------------------------
+# The request follows the store: approved book -> fulfilled (DECISIONS 5.14)
+# ---------------------------------------------------------------------------
+
+from io import StringIO  # noqa: E402
+
+from django.core.management import call_command  # noqa: E402
+
+from support import services as support_services  # noqa: E402
+from support.models import Conversation  # noqa: E402
+
+
+class BookOnSaleSyncTests(APITestCase):
+    ISBN_A = "9780000000301"
+    ISBN_B = "9780000000302"
+
+    def setUp(self):
+        self.admin = get_user_model().objects.create_superuser(
+            email="admin@example.com", first_name="a", last_name="b", password="Str0ng-Passw0rd!"
+        )
+        self.alef, self.be, self.jim = make_user("alef"), make_user("be"), make_user("jim")
+
+    def request(self, isbn, *users):
+        book_request = BookRequest.objects.create(isbn=isbn, title="کتاب")
+        for user in users:
+            RequestEntry.objects.create(request=book_request, requester=user)
+        return book_request
+
+    def upload(self, isbn, user, status=Book.Status.PENDING):
+        return Book.objects.create(
+            title="کتاب", isbn=isbn, status=status, price=None if status != Book.Status.APPROVED else 10_000,
+            uploaded_by=user, book_file="books/files/x.pdf",
+        )
+
+    def approve(self, book):
+        book.status, book.price = Book.Status.APPROVED, 10_000
+        book.save()
+
+    def public_titles(self):
+        return {r["isbn"] for r in self.client.get(URL).data["results"]}
+
+    def test_the_reported_path(self):
+        # الف requests two books; الف uploads one, ب the other
+        req_h = self.request(self.ISBN_A, self.alef, self.jim)
+        req_y = self.request(self.ISBN_B, self.alef)
+        book_h = self.upload(self.ISBN_A, self.alef)
+        book_y = self.upload(self.ISBN_B, self.be)
+        flags = {r["isbn"]: r["book_in_review"] for r in self.client.get(URL).data["results"]}
+        self.assertEqual(flags, {self.ISBN_A: True, self.ISBN_B: True})
+
+        self.approve(book_h)
+        self.approve(book_y)
+        req_h.refresh_from_db()
+        req_y.refresh_from_db()
+        self.assertEqual((req_h.status, req_y.status), ("fulfilled", "fulfilled"))
+        self.assertEqual(self.public_titles(), set())  # off the public list
+
+        # Every requester is told, and their conversation closes automatically
+        for entry in req_h.entries.all():
+            conversation = support_services.find(entry)
+            self.assertEqual(conversation.closed_kind, "fulfilled")
+            self.assertIn("تأمین شد", conversation.messages.last().body)
+
+        # "My Requests": fulfilled, with the link to the store's book
+        self.client.force_authenticate(self.jim)
+        item = self.client.get("/dashboard/requests/").data["results"][0]
+        self.assertEqual((item["status"], item["book_id"]), ("fulfilled", book_h.pk))
+
+    def test_admin_upload_created_approved_fulfils_too(self):
+        book_request = self.request(self.ISBN_A, self.alef)
+        self.upload(self.ISBN_A, self.admin, status=Book.Status.APPROVED)
+        book_request.refresh_from_db()
+        self.assertEqual(book_request.status, "fulfilled")
+
+    def test_rejected_request_is_left_alone(self):
+        book_request = self.request(self.ISBN_A, self.alef)
+        book_request.status, book_request.rejection_reason = "rejected", "حق نشر"
+        book_request.save()
+        self.approve(self.upload(self.ISBN_A, self.be))
+        book_request.refresh_from_db()
+        self.assertEqual(book_request.status, "rejected")
+
+    def test_leaving_the_store_reopens_but_keeps_manual_closes(self):
+        book_request = self.request(self.ISBN_A, self.alef, self.jim)
+        jim_entry = book_request.entries.get(requester=self.jim)
+        support_services.post_user_message(self.jim, jim_entry, "سلام")
+        support_services.close(support_services.find(jim_entry), self.admin, "مزاحمت")
+        book = self.upload(self.ISBN_A, self.be)
+        self.approve(book)
+
+        book.status = Book.Status.REJECTED
+        book.save()
+        book_request.refresh_from_db()
+        self.assertEqual(book_request.status, "open")
+        alef_conversation = support_services.find(book_request.entries.get(requester=self.alef))
+        self.assertFalse(alef_conversation.is_closed)
+        self.assertEqual(support_services.find(jim_entry).closed_kind, "support")
+        self.assertEqual(self.public_titles(), {self.ISBN_A})
+
+    def test_back_to_pending_shows_in_review_again(self):
+        book_request = self.request(self.ISBN_A, self.alef)
+        book = self.upload(self.ISBN_A, self.be)
+        self.approve(book)
+        book.status = Book.Status.PENDING
+        book.save()
+        book_request.refresh_from_db()
+        self.assertEqual(book_request.status, "open")
+        self.assertTrue(self.client.get(URL).data["results"][0]["book_in_review"])
+
+    def test_unrelated_save_changes_nothing(self):
+        book_request = self.request(self.ISBN_A, self.alef)
+        book = self.upload(self.ISBN_A, self.be)
+        book.title = "عنوان تازه"
+        book.save()
+        book_request.refresh_from_db()
+        self.assertEqual(book_request.status, "open")
+        self.assertEqual(Conversation.objects.count(), 0)
+
+
+class FulfilCommandTests(TestCase):
+    def test_fixes_old_data_with_messages_and_is_repeatable(self):
+        alef = make_user("alef")
+        book_request = BookRequest.objects.create(isbn="9780000000401", title="کتاب")
+        entry = RequestEntry.objects.create(request=book_request, requester=alef)
+        other = BookRequest.objects.create(isbn="9780000000402", title="بی‌کتاب")
+        # An approved book that existed BEFORE the sync rule: write it without save()
+        book = Book.objects.create(
+            title="کتاب", isbn="9780000000401", status=Book.Status.PENDING, uploaded_by=alef,
+            book_file="books/files/x.pdf",
+        )
+        Book.objects.filter(pk=book.pk).update(status=Book.Status.APPROVED, price=0)
+        book_request.refresh_from_db()
+        self.assertEqual(book_request.status, "open")
+
+        out = StringIO()
+        call_command("fulfil_requests_on_sale", "--dry-run", stdout=out)
+        book_request.refresh_from_db()
+        self.assertEqual(book_request.status, "open")
+        self.assertIn("1 request(s) would be fulfilled", out.getvalue())
+
+        call_command("fulfil_requests_on_sale", stdout=StringIO())
+        book_request.refresh_from_db()
+        other.refresh_from_db()
+        self.assertEqual((book_request.status, other.status), ("fulfilled", "open"))
+        self.assertEqual(support_services.find(entry).closed_kind, "fulfilled")
+
+        out = StringIO()
+        call_command("fulfil_requests_on_sale", stdout=out)
+        self.assertIn("0 request(s) fulfilled", out.getvalue())

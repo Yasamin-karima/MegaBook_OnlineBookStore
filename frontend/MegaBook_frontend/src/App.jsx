@@ -18,6 +18,8 @@ import BookReaderPage from './components/BookReaderPage';
 import DashboardPage from './components/DashboardPage';
 import ChangePasswordPage from './components/ChangePasswordPage';
 import PublicRequestsPage from './components/PublicRequestsPage';
+import ConversationPage from './components/ConversationPage';
+import MyRequestsUploadsPage from './components/MyRequestsUploadsPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import useGoBack from './hooks/useGoBack';
 
@@ -146,12 +148,39 @@ const App = () => {
       />
       {/* مبادله‌ی کتاب: لیست عمومی درخواست‌های باز؛ بدون ورود هم دیده می‌شود */}
       <Route path="/requests" element={<PublicRequestsPage />} />
+      {/* جزئیات یک درخواست من (RequestEntry) و یک بارگذاری من، با گفتگوی پشتیبانی.
+          React Router مسیر ثابت /requests/new را بر :id مقدم می‌داند. */}
+      <Route
+        path="/requests/:id"
+        element={
+          <ProtectedRoute>
+            <ConversationPage kind="request" />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/uploads/:id"
+        element={
+          <ProtectedRoute>
+            <ConversationPage kind="upload" />
+          </ProtectedRoute>
+        }
+      />
       {/* داشبورد: خلاصه‌ی حساب، کیف پول، سبد، درخواست‌ها و بارگذاری‌ها */}
       <Route
         path="/dashboard"
         element={
           <ProtectedRoute>
             <DashboardPage />
+          </ProtectedRoute>
+        }
+      />
+      {/* «درخواست‌ها و آپلودهای من»: زیرصفحه‌ی داشبورد، برای پیگیری (?tab=requests|uploads&status=…) */}
+      <Route
+        path="/dashboard/my-items"
+        element={
+          <ProtectedRoute>
+            <MyRequestsUploadsPage />
           </ProtectedRoute>
         }
       />

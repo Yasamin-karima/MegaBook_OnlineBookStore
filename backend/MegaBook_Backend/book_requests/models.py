@@ -1,6 +1,6 @@
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
 from django.db.models import Q
 
 # چرا دو جدول؟
@@ -26,7 +26,8 @@ class BookRequest(models.Model):
     cover_url = models.URLField(max_length=500, blank=True)
 
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.OPEN)
-    rejection_reason = models.TextField(blank=True)
+    # Sent to every requester in a system message when the request is rejected (support app)
+    rejection_reason = models.TextField(blank=True, help_text="این متن عیناً برای کاربر ارسال می‌شود")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -74,7 +75,23 @@ class BookRequest(models.Model):
         # اینجا هست تا قانون هر طور که شیء ذخیره شود برقرار بماند: ادمین، داشبورد React
         # آینده، shell، یا هر کد دیگری که obj.save() را صدا بزند.
         self.apply_status_rules()
-        super().save(*args, **kwargs)
+        previous = _stored_status(self)
+        with transaction.atomic():
+            super().save(*args, **kwargs)
+            if previous is not None and previous != self.status:
+                # The single path for "the status changed": every requester gets a system
+                # message in their own conversation (DECISIONS 12.3). Imported here because
+                # the support app depends on this one, not the other way round.
+                from support.services import on_request_status_changed
+
+                on_request_status_changed(self, previous)
+
+
+def _stored_status(obj):
+    """The status currently in the database (None for a new object)."""
+    if obj._state.adding or obj.pk is None:
+        return None
+    return type(obj).objects.filter(pk=obj.pk).values_list("status", flat=True).first()
 
 
 class RequestEntry(models.Model):

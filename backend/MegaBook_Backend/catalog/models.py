@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
-from django.db import models
+from django.db import models, transaction
 from django.db.models import F, Q
 
 from MegaBook_Backend.private_files import RandomName, private_storage
@@ -188,7 +188,26 @@ class Book(models.Model):
     def save(self, *args, **kwargs):
         # Here so the rule holds however the book is saved: admin, API, seed, shell
         self.apply_money_rules()
-        super().save(*args, **kwargs)
+        adding = self._state.adding or self.pk is None
+        previous = None
+        if not adding:
+            previous = type(self).objects.filter(pk=self.pk).values_list("status", flat=True).first()
+        with transaction.atomic():
+            super().save(*args, **kwargs)
+            # One path for "the status changed", whoever changes it (admin, API, shell).
+            # Imported here: those apps depend on this one, not the other way round.
+            if (adding and self.status == self.Status.APPROVED) or (previous is not None and previous != self.status):
+                # The request for this ISBN follows the store: fulfilled when the book
+                # goes on sale (also an admin's upload, created approved), open again
+                # if it leaves (DECISIONS 5.14)
+                from book_requests.services import sync_with_book
+
+                sync_with_book(self, previous)
+            if previous is not None and previous != self.status:
+                # Approved or rejected: a system message in the upload's conversation (12.3)
+                from support.services import on_book_status_changed
+
+                on_book_status_changed(self, previous)
 
     @classmethod
     def active_for_isbn(cls, isbn):
@@ -204,15 +223,22 @@ class Book(models.Model):
         """Who may download the full file: admins, and users who own the book
         (the uploader and buyers; catalog/ownership.py, the one definition).
 
-        The book's status is not checked: a bought book stays readable even if it's
-        later taken off the store. Every download path (the signed-link endpoint and
-        the download view) asks this one method.
+        For buyers the book's status is not checked: a bought book stays readable even
+        if it's later taken off the store. The UPLOADER reads it only while it's
+        approved: the library is for books that are on sale, and a pending or rejected
+        upload is a record to track, not a book to read (DECISIONS 11.4).
+        Every download path (the signed-link endpoint and the download view) asks
+        this one method.
         """
         from .ownership import owned_book_ids
 
         if user is None or not user.is_authenticated or not user.is_active:
             return False
-        return user.is_staff or self.pk in owned_book_ids(user, [self.pk])
+        if user.is_staff:
+            return True
+        if self.uploaded_by_id == user.pk:
+            return self.status == self.Status.APPROVED
+        return self.pk in owned_book_ids(user, [self.pk])
 
     @property
     def file_size(self):

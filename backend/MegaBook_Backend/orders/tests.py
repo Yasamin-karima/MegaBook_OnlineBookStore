@@ -295,12 +295,15 @@ class AfterPurchaseTests(CheckoutTestBase):
         summary = self.client.get(reverse("library_summary")).data
         self.assertEqual(summary, {"purchased": 1, "uploaded": 0, "bookmarked": None})
 
-    def test_my_uploads_lists_every_status(self):
+    def test_library_uploads_are_only_approved_books(self):
+        # The library is for reading (DECISIONS 11.4): pending and rejected uploads are
+        # tracked on "My Requests & Uploads", not listed here
         BookFactory.make(self.seller1, price=None, book_status=Book.Status.PENDING)
+        BookFactory.make(self.seller1, price=None, book_status=Book.Status.REJECTED)
         self.client.force_authenticate(self.seller1)
         data = self.client.get(reverse("my_uploads")).data
-        self.assertEqual({b["status"] for b in data["results"]}, {"approved", "pending"})
-        self.assertEqual(self.client.get(reverse("library_summary")).data["uploaded"], 2)
+        self.assertEqual({b["status"] for b in data["results"]}, {"approved"})
+        self.assertEqual(self.client.get(reverse("library_summary")).data["uploaded"], 1)
         # Uploads are never in the uploader's purchased library
         self.assertEqual(self.client.get(reverse("library")).data["count"], 0)
 

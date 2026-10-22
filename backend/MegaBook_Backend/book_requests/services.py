@@ -81,3 +81,41 @@ def submit_request(user, *, isbn, title, authors="", cover_url="", notes="", req
             return SubmitOutcome(ALREADY_REQUESTED)
 
     return SubmitOutcome(REQUESTED)
+
+
+# ---------------------------------------------------------------------------
+# A book with the same ISBN goes on sale or leaves the store (DECISIONS 5.14)
+# ---------------------------------------------------------------------------
+
+def sync_with_book(book, previous):
+    """Called from Book.save() (inside its transaction) when a book is created approved
+    or its status changes. The request for that ISBN follows the store:
+
+    - the book is approved (or created approved) -> an OPEN request becomes fulfilled;
+    - the book leaves approved and no other approved book has that ISBN -> a fulfilled
+      request goes back to open.
+
+    Each change goes through BookRequest.save(), so every requester gets the system
+    message and their conversations close or reopen by the usual rules (12.3, 12.4).
+    A rejected request is never changed here: rejecting is the admin's decision.
+    """
+    approved = Book.Status.APPROVED
+    if book.status == approved and previous != approved:
+        _set_status(book.isbn, BookRequest.Status.OPEN, BookRequest.Status.FULFILLED)
+    elif previous == approved and book.status != approved:
+        still_on_sale = Book.objects.filter(isbn=book.isbn, status=approved).exclude(pk=book.pk).exists()
+        if not still_on_sale:
+            _set_status(book.isbn, BookRequest.Status.FULFILLED, BookRequest.Status.OPEN)
+
+
+def _set_status(isbn, from_status, to_status):
+    book_request = BookRequest.objects.select_for_update().filter(isbn=isbn, status=from_status).first()
+    if book_request is not None:
+        book_request.status = to_status
+        book_request.save()
+
+
+def open_requests_already_on_sale():
+    """Open requests whose ISBN already has an approved book (data from before 5.14)."""
+    on_sale = Book.objects.filter(status=Book.Status.APPROVED).values("isbn")
+    return BookRequest.objects.filter(status=BookRequest.Status.OPEN, isbn__in=on_sale)

@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     'orders',
     'library',
     'dashboard',
+    'support',
 ]
 
 MIDDLEWARE = [
@@ -142,7 +143,13 @@ REST_FRAMEWORK = {
     ),
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.AllowAny',
-    ]
+    ],
+    # Only views that set throttle_scope are limited (ScopedRateThrottle on the view).
+    # Counts are kept in the cache (LocMemCache by default: per process; a shared cache
+    # such as Redis is needed when running several workers).
+    'DEFAULT_THROTTLE_RATES': {
+        'support_messages': '10/min',
+    },
 }
 
 from datetime import timedelta

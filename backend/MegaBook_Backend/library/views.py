@@ -14,8 +14,10 @@ class LibraryPagination(PageNumberPagination):
     page_size = 6
 
 
-def my_uploads(user):
-    return Book.objects.filter(uploaded_by=user)
+def my_readable_uploads(user):
+    """The library shows only uploads that are approved and on sale (books to READ).
+    All uploads, in every status, are tracked on "My Requests & Uploads" (dashboard app)."""
+    return Book.objects.filter(uploaded_by=user, status=Book.Status.APPROVED)
 
 
 class LibraryListView(generics.ListAPIView):
@@ -37,13 +39,13 @@ class LibraryListView(generics.ListAPIView):
 
 
 class MyUploadsView(generics.ListAPIView):
-    """GET /library/uploads/ -> books I uploaded, in every status, newest first."""
+    """GET /library/uploads/ -> my approved uploads (books I can read), newest first."""
     serializer_class = UploadedBookSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = LibraryPagination
 
     def get_queryset(self):
-        return my_uploads(self.request.user).prefetch_related("authors").order_by("-created_at", "-id")
+        return my_readable_uploads(self.request.user).prefetch_related("authors").order_by("-created_at", "-id")
 
 
 class LibrarySummaryView(APIView):
@@ -56,6 +58,6 @@ class LibrarySummaryView(APIView):
     def get(self, request):
         return Response({
             "purchased": LibraryItem.objects.filter(user=request.user).count(),
-            "uploaded": my_uploads(request.user).count(),
+            "uploaded": my_readable_uploads(request.user).count(),
             "bookmarked": None,
         })

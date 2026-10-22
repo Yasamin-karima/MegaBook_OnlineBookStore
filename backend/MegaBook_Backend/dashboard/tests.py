@@ -124,3 +124,182 @@ class DashboardTests(APITestCase):
         # ledger, cart, requests, uploads, sales (+1 for the JWT user lookup in real requests)
         with self.assertNumQueries(5):
             self.client.get(self.url)
+
+
+# ---------------------------------------------------------------------------
+# "My Requests & Uploads"
+# ---------------------------------------------------------------------------
+
+from support import services as support_services  # noqa: E402
+
+
+class TrackingListTests(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_superuser(
+            email="admin@example.com", first_name="a", last_name="b", password=PASSWORD
+        )
+        self.a = make_user(email="ali@example.com")
+        self.b = make_user(email="bita@example.com")
+        self.client.force_authenticate(self.a)
+
+    def request(self, user, isbn, title="کتاب", status=BookRequest.Status.OPEN, reason=""):
+        book_request, _ = BookRequest.objects.get_or_create(isbn=isbn, defaults={"title": title})
+        entry = RequestEntry.objects.create(request=book_request, requester=user)
+        if status != book_request.status:
+            book_request.status, book_request.rejection_reason = status, reason
+            book_request.save()
+        return entry
+
+    def get(self, name, **params):
+        response = self.client.get(reverse(name), params)
+        self.assertEqual(response.status_code, 200)
+        return response.data
+
+    def test_counts_match_the_dashboard_for_every_status(self):
+        self.request(self.a, "9780000000101", status=BookRequest.Status.OPEN)
+        self.request(self.a, "9780000000102", status=BookRequest.Status.OPEN)
+        self.request(self.a, "9780000000103", status=BookRequest.Status.FULFILLED)
+        self.request(self.a, "9780000000104", status=BookRequest.Status.REJECTED, reason="حق نشر")
+        self.request(self.b, "9780000000105")  # someone else's
+        BookFactory.make(self.a, price=None, book_status=Book.Status.PENDING)
+        BookFactory.make(self.a)
+        BookFactory.make(self.a)
+        BookFactory.make(self.a, price=None, book_status=Book.Status.REJECTED)
+
+        dashboard = self.get("dashboard")
+        self.assertEqual(dashboard["requests"], {"open": 2, "fulfilled": 1, "rejected": 1})
+        for key, n in dashboard["requests"].items():
+            self.assertEqual(self.get("my_requests", status=key)["count"], n, key)
+        for key in ("pending", "approved", "rejected"):
+            self.assertEqual(self.get("my_uploads_tracking", status=key)["count"], dashboard["uploads"][key], key)
+        self.assertEqual(self.get("my_requests")["count"], 4)
+        self.assertEqual(self.get("my_uploads_tracking")["count"], 4)
+
+    def test_only_my_items_even_for_the_same_isbn(self):
+        mine = self.request(self.a, "9780000000201", title="مشترک")
+        theirs = self.request(self.b, "9780000000201")
+        BookFactory.make(self.b)
+        support_services.post_user_message(self.b, theirs, "پیام بیتا")
+        items = self.get("my_requests")["results"]
+        self.assertEqual([i["id"] for i in items], [mine.pk])
+        self.assertIsNone(items[0]["last_message"])
+        self.assertEqual(self.get("my_uploads_tracking")["count"], 0)
+        body = self.client.get(reverse("my_requests")).content.decode()
+        self.assertNotIn("bita@example.com", body)
+        self.assertNotIn("requester", body)
+
+    def test_unread_badge_and_reading(self):
+        entry = self.request(self.a, "9780000000301")
+        support_services.post_support_message(self.admin, entry, "سلام")
+        support_services.post_support_message(self.admin, entry, "پاسخ دوم")
+        item = self.get("my_requests")["results"][0]
+        self.assertEqual(item["unread_count"], 2)
+        self.assertEqual(item["last_message"], {"sender": "support", "text": "پاسخ دوم"})
+        self.client.post(f"/support/requests/{entry.pk}/read/")
+        self.assertEqual(self.get("my_requests")["results"][0]["unread_count"], 0)
+
+    def test_fulfilled_request_links_to_the_store_book_and_closes(self):
+        entry = self.request(self.a, "9770000000999", status=BookRequest.Status.FULFILLED)
+        store_book = Book.objects.create(
+            title="x", isbn="9770000000999", status=Book.Status.APPROVED, price=0,
+            uploaded_by=self.admin, book_file="books/files/x.pdf",
+        )
+        item = self.get("my_requests")["results"][0]
+        self.assertEqual((item["id"], item["book_id"], item["conversation_closed"]), (entry.pk, store_book.pk, True))
+
+    def test_upload_sales_and_earnings_match_the_ledger(self):
+        buyer = make_user(email="buyer@example.com")
+        wallet_services.adjust(wallet_services.wallet_of(buyer), 100_000, "شارژ", self.admin)
+        sold = BookFactory.make(self.a, price=40_000, share=30_000)
+        other = BookFactory.make(self.a, price=20_000, share=10_000)
+        free = BookFactory.make(self.a, price=0)
+        for book in (sold, other, free):
+            cart_services.add(buyer, book.pk)
+        order_services.checkout(buyer)
+        pending = BookFactory.make(self.a, price=None, book_status=Book.Status.PENDING)
+
+        rows = {i["id"]: i for i in self.get("my_uploads_tracking")["results"]}
+        for book in (sold, other, free):
+            ledger = sum(LedgerEntry.objects.filter(
+                wallet__owner=self.a, type="sale_income", order_item__book=book
+            ).values_list("amount", flat=True))
+            self.assertEqual((rows[book.pk]["sales_count"], rows[book.pk]["earnings"]), (1, ledger))
+            self.assertEqual(rows[book.pk]["book_id"], book.pk)
+        self.assertEqual(rows[sold.pk]["earnings"], 30_000)
+        self.assertEqual(
+            (rows[pending.pk]["sales_count"], rows[pending.pk]["earnings"], rows[pending.pk]["book_id"]),
+            (None, None, None),
+        )
+
+    def test_no_book_file_or_download_address(self):
+        BookFactory.make(self.a)
+        body = self.client.get(reverse("my_uploads_tracking")).content.decode()
+        for forbidden in ("book_file", "books/files", "file-link", "/file/", "seller_share"):
+            self.assertNotIn(forbidden, body)
+
+    def test_search_and_status_filter(self):
+        self.request(self.a, "9780000000401", title="سمفونی مردگان")
+        self.request(self.a, "9780000000402", title="بوف کور")
+        self.assertEqual(self.get("my_requests", search="سمفونی")["count"], 1)
+        self.assertEqual(self.get("my_requests", search="۹۷۸-۰۰۰۰۰۰۰۴۰۲")["results"][0]["title"], "بوف کور")
+        Book.objects.create(title="جزوهٔ جبر", isbn="9770000000555", status=Book.Status.PENDING,
+                            uploaded_by=self.a, book_file="books/files/x.pdf")
+        self.assertEqual(self.get("my_uploads_tracking", search="جبر")["count"], 1)
+        self.assertEqual(self.get("my_uploads_tracking", search="9770000000555")["count"], 1)
+        self.assertEqual(self.get("my_uploads_tracking", status="approved")["count"], 0)
+
+    def test_get_only_and_login_required(self):
+        entry = self.request(self.a, "9780000000501")
+        for name in ("my_requests", "my_uploads_tracking"):
+            for method in ("post", "put", "patch", "delete"):
+                response = getattr(self.client, method)(reverse(name))
+                self.assertEqual(response.status_code, 405, (name, method))
+        # No other endpoint withdraws a request either
+        self.assertEqual(self.client.delete(f"/book-requests/{entry.request_id}/join/").status_code, 405)
+        self.assertEqual(self.client.delete("/book-requests/").status_code, 405)
+        self.assertTrue(RequestEntry.objects.filter(pk=entry.pk).exists())
+        self.client.force_authenticate(None)
+        self.assertEqual(self.client.get(reverse("my_requests")).status_code, 401)
+
+    def test_query_counts(self):
+        for i in range(6):
+            entry = self.request(self.a, f"97800000006{i:02d}")
+            support_services.post_support_message(self.admin, entry, "پیام")
+            BookFactory.make(self.a)
+        with self.assertNumQueries(2):
+            self.client.get(reverse("my_requests"))
+        with self.assertNumQueries(3):
+            self.client.get(reverse("my_uploads_tracking"))
+
+
+class UploaderReadingTests(APITestCase):
+    def setUp(self):
+        self.uploader = make_user(email="up@example.com")
+        self.stranger = make_user(email="other@example.com")
+
+    def link(self, user, book):
+        self.client.force_authenticate(user)
+        return self.client.get(reverse("book_file_link", args=[book.pk])).status_code
+
+    def test_uploader_reads_only_approved_and_strangers_never(self):
+        book = BookFactory.make(self.uploader)
+        self.assertEqual(self.link(self.uploader, book), 200)
+        self.assertEqual(self.link(self.stranger, book), 404)
+        self.client.force_authenticate(self.uploader)
+        self.assertTrue(self.client.get(reverse("book_detail", args=[book.pk])).data["is_owned"])
+        for blocked in (Book.Status.PENDING, Book.Status.REJECTED):
+            book.status = blocked
+            book.save()
+            self.assertEqual(self.link(self.uploader, book), 404, blocked)
+            self.client.force_authenticate(self.uploader)
+            self.assertEqual(self.client.get(reverse("book_detail", args=[book.pk])).status_code, 404)
+
+
+class AdminRequestEntryReadOnlyTests(APITestCase):
+    def test_admin_cannot_delete_request_entries_or_requests(self):
+        from django.contrib.admin.sites import site
+
+        model_admin = site._registry[RequestEntry]
+        self.assertFalse(model_admin.has_delete_permission(None))
+        self.assertFalse(model_admin.has_add_permission(None))
+        self.assertFalse(site._registry[BookRequest].has_delete_permission(None))

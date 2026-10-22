@@ -229,6 +229,20 @@ export default function PublicRequestsPage() {
               بارگذاری کتاب
             </Link>
           </div>
+          {/* پیگیری درخواست‌ها و آپلودهای خود کاربر؛ فقط برای کاربر واردشده. در کارت معرفی بالای
+              صفحه است، دور از دکمهٔ کوچک «من هم می‌خواهم» روی کارت‌ها، تا با آن اشتباه نشود. */}
+          {isLoggedIn() && (
+            <Link
+              to="/dashboard/my-items?tab=requests"
+              className="mt-3 flex h-11 items-center justify-between rounded-xl bg-gray-50 px-4 text-sm font-semibold text-gray-800 ring-1 ring-gray-200 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600/50"
+            >
+              <span className="flex items-center gap-2">
+                <span aria-hidden="true">📋</span>
+                درخواست‌ها و آپلودهای من
+              </span>
+              <span aria-hidden="true" className="text-gray-400">‹</span>
+            </Link>
+          )}
         </section>
 
         {/* ═══ جستجو و مرتب‌سازی ═══ */}

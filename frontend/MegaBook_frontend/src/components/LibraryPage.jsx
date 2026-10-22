@@ -6,7 +6,8 @@ import { formatPrice, toFaNumber } from "../utils/format";
 // ═════════════════════════════════════════════════════════════
 // 🔌 اتصال به بکند (src/api/library.js)
 //   GET /library/?page=n          ← کتاب‌های خریداری‌شده، جدیدترین خرید اول
-//   GET /library/uploads/?page=n  ← کتاب‌هایی که کاربر بارگذاری کرده، با همهٔ وضعیت‌ها
+//   GET /library/uploads/?page=n  ← کتاب‌های تأییدشدهٔ کاربر (برای خواندن). پیگیری همهٔ
+//                                   بارگذاری‌ها، با گفتگو، در «درخواست‌ها و آپلودهای من» است.
 //   GET /library/summary/         ← شمارندهٔ تب‌ها
 // هر لیست با صفحه‌بندی DRF می‌آید ({ count, next, results })، شش کتاب در هر صفحه.
 //
@@ -20,13 +21,6 @@ const TABS = [
   { key: "uploaded", label: "بارگذاری‌شده" },
   { key: "bookmarked", label: "نشان‌شده" },
 ];
-
-// برچسب‌ها و رنگ‌های Book.Status
-const UPLOAD_STATUS = {
-  pending: { label: "در انتظار تأیید", className: "bg-amber-50 text-amber-800 ring-amber-200" },
-  approved: { label: "در فروشگاه", className: "bg-green-50 text-green-700 ring-green-200" },
-  rejected: { label: "رد شده", className: "bg-red-50 text-red-700 ring-red-200" },
-};
 
 // TODO (bookmarks): the bookmark model has no backend yet; the tab stays empty until it does
 const NO_BOOKMARKS = { count: 0, next: null, results: [] };
@@ -321,33 +315,21 @@ function PurchasedCard({ book }) {
   );
 }
 
+// Only approved uploads reach the library (books to read). The whole card opens the
+// book's page, where its uploader gets "read the book". Status, conversation, sales
+// and earnings live on "My Requests & Uploads", not here.
 function UploadCard({ book }) {
-  const s = UPLOAD_STATUS[book.status];
   return (
-    <article className="flex h-full flex-col rounded-2xl border border-gray-200 bg-white shadow-sm">
-      <div className="relative">
-        <Cover book={book} dim={book.status === "rejected"} />
-        <span className={`absolute right-2 top-2 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${s.className}`}>
-          {s.label}
-        </span>
-      </div>
+    <Link
+      to={`/books/${book.id}`}
+      className="flex h-full flex-col rounded-2xl border border-gray-200 bg-white shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600/50"
+    >
+      <Cover book={book} />
       <div className="flex flex-1 flex-col p-3">
         <TitleBlock book={book} />
-        <p className="mb-3 mt-1 text-xs font-semibold text-gray-700">
-          {book.price == null ? "قیمت هنوز تعیین نشده" : formatPrice(book.price)}
-        </p>
-        {/* TODO (tickets): an upload details page with a conversation with the admin
-            (/uploads/<id>). Until then only approved books link to their store page. */}
-        {book.status === "approved" && (
-          <Link
-            to={`/books/${book.id}`}
-            className="mt-auto flex h-10 w-full items-center justify-center gap-1.5 rounded-xl text-sm font-semibold text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50"
-          >
-            مشاهده در فروشگاه
-          </Link>
-        )}
+        <p className="mt-1 text-xs font-semibold text-gray-700">{formatPrice(book.price)}</p>
       </div>
-    </article>
+    </Link>
   );
 }
 

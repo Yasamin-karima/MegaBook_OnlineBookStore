@@ -19,9 +19,9 @@ class BookAdmin(admin.ModelAdmin):
     search_fields = ("title", "isbn", "authors__name")
     list_select_related = ("uploaded_by",)
     filter_horizontal = ("authors", "translators", "tags")
-    readonly_fields = ("commission_display", "created_at", "updated_at")
+    readonly_fields = ("commission_display", "conversation_link", "created_at", "updated_at")
     fieldsets = (
-        (None, {"fields": ("title", "original_title", "isbn", "status", "uploaded_by")}),
+        (None, {"fields": ("title", "original_title", "isbn", "status", "uploaded_by", "conversation_link")}),
         # The money split the admin agrees on while approving. Commission is derived
         # (price - seller_share) and shows the saved values: it updates after saving.
         ("پول", {"fields": ("price", "seller_share", "commission_display")}),
@@ -30,6 +30,15 @@ class BookAdmin(admin.ModelAdmin):
         ("فایل‌ها", {"fields": ("cover", "sample_file", "book_file")}),
         (None, {"fields": ("created_at", "updated_at")}),
     )
+
+    @admin.display(description="گفت‌وگو با بارگذارنده")
+    def conversation_link(self, obj):
+        # Approving or rejecting writes a system message there (support app)
+        if obj is None or obj.pk is None:
+            return "—"
+        from support.admin import conversation_link
+
+        return conversation_link("book", obj)
 
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
