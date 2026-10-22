@@ -197,7 +197,7 @@ export default function ConversationPage({ kind = "request" }) {
   if (status === "notfound" || status === "error") {
     return (
       <Shell kind={kind}>
-        <div className="mx-4 mt-8 rounded-2xl border border-gray-200 bg-white p-8 text-center shadow-sm">
+        <div className="mx-4 mt-8 rounded-2xl border border-gray-200 bg-white p-8 text-center shadow-sm md:mx-auto md:w-full md:max-w-md">
           <div className="mb-3 text-4xl">{status === "notfound" ? "🔍" : "⚠️"}</div>
           <h2 className="text-lg font-bold text-gray-900">
             {status === "notfound" ? "پیدا نشد" : "بارگذاری ناموفق بود"}
@@ -214,13 +214,16 @@ export default function ConversationPage({ kind = "request" }) {
 
   return (
     <Shell kind={kind}>
+      {/* Mobile: the details card on top and the chat fills the rest of the height.
+          md+: the details card on the right (RTL start) beside the chat, which keeps the full height. */}
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row md:items-start md:gap-6 md:px-6 md:py-4">
       {/* کارت جزئیات بالای صفحه؛ گفتگو بقیهٔ ارتفاع را پر می‌کند */}
-      <div className="shrink-0 px-4 pt-3">
+      <div className="shrink-0 px-4 pt-3 md:w-72 md:p-0 lg:w-80">
         {kind === "request" ? <RequestSummary item={item} /> : <UploadSummary item={item} />}
       </div>
 
       {/* ═══ گفتگو ═══ */}
-      <section className="mx-4 my-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+      <section className="mx-4 my-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm md:m-0 md:self-stretch">
         <div className="flex shrink-0 items-center gap-3 border-b border-gray-100 px-4 py-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white" aria-hidden="true">
             م
@@ -260,6 +263,7 @@ export default function ConversationPage({ kind = "request" }) {
           error={sendError}
         />
       </section>
+      </div>
     </Shell>
   );
 }
@@ -274,7 +278,7 @@ function Shell({ kind, children }) {
   const goBack = useGoBack();
   return (
     <div dir="rtl" className="flex h-dvh flex-col bg-gray-100">
-      <div className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col">
+      <div className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col md:max-w-5xl">
         <header className="flex h-14 shrink-0 items-center justify-between border-b border-gray-200 px-2">
           <button
             type="button"

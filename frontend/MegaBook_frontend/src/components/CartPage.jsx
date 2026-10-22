@@ -140,7 +140,7 @@ export default function CartPage({ onBack }) {
             <RemovedNotice removed={removedOnOpen} />
           </div>
         )}
-        <div className="mx-4 mt-8 flex flex-col items-center rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center">
+        <div className="mx-4 mt-8 flex flex-col items-center rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center md:mx-auto md:max-w-md">
           <span className="text-4xl" aria-hidden="true">🛒</span>
           <h2 className="mt-3 text-lg font-bold text-gray-900">سبد خرید خالی است</h2>
           <p className="mt-1 text-sm text-gray-500">کتاب‌هایی را که می‌خواهید به سبد اضافه کنید.</p>
@@ -157,9 +157,12 @@ export default function CartPage({ onBack }) {
 
   return (
     <PageShell count={cart.count} onBack={onBack}>
-      <div className="pb-36">
+      {/* md+: two columns. Right (RTL start): notices and books. Left: wallet, summary and the
+          pay button, as a sticky side card. Below md the wrappers are plain blocks. */}
+      <div className="pb-36 md:grid md:grid-cols-[minmax(0,1fr)_20rem] md:items-start md:gap-6 md:px-6 md:pb-12 lg:grid-cols-[minmax(0,1fr)_22rem]">
+        <div className="md:min-w-0">
         {/* ═══ هشدارهای بالای صفحه ═══ */}
-        <div className="mx-4 mt-4 space-y-2">
+        <div className="mx-4 mt-4 space-y-2 md:mx-0">
           {removedOnOpen.length > 0 && <RemovedNotice removed={removedOnOpen} />}
           {unavailable.length > 0 && (
             <Notice tone="red" icon="⛔">
@@ -190,7 +193,7 @@ export default function CartPage({ onBack }) {
         </div>
 
         {/* ═══ کتاب‌ها ═══ */}
-        <ul className="mx-4 mt-4 divide-y divide-gray-100 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+        <ul className="mx-4 mt-4 divide-y divide-gray-100 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm md:mx-0">
           {items.map((item) => (
             <CartItem
               key={item.book.id}
@@ -201,11 +204,14 @@ export default function CartPage({ onBack }) {
             />
           ))}
         </ul>
+        </div>
+
+        <div className="md:sticky md:top-18">
 
         {/* ═══ پرداخت از کیف پول ═══ */}
         {/* کیف پول تنها روش پرداخت است؛ برای همین انتخاب روش پرداخت (طرح Visily) حذف شد */}
         {payable.length > 0 && !allFree && (
-          <section className="mx-4 mt-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+          <section className="mx-4 mt-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm md:mx-0">
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-50 text-xl" aria-hidden="true">
                 👛
@@ -240,7 +246,7 @@ export default function CartPage({ onBack }) {
         {/* ═══ خلاصه ═══ */}
         {/* مالیات نداریم، پس فقط یک ردیف «مبلغ قابل پرداخت» لازم است */}
         {payable.length > 0 && (
-          <section className="mx-4 mt-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+          <section className="mx-4 mt-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm md:mx-0">
             <div className="flex items-center justify-between text-sm text-gray-500">
               <span>تعداد کتاب‌ها</span>
               <span>{toFaNumber(payable.length)}</span>
@@ -251,36 +257,38 @@ export default function CartPage({ onBack }) {
             </div>
           </section>
         )}
-      </div>
 
-      {/* ═══ نوار پرداخت چسبیده به پایین ═══
-          این صفحه نوار ناوبری پایین برنامه را ندارد (مثل بقیهٔ صفحه‌های داخلی)، پس bottom-0 درست است. */}
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-gray-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto max-w-md px-4 py-3">
-          <button
-            type="button"
-            onClick={handlePay}
-            disabled={!canPay}
-            aria-busy={paying}
-            className="flex h-14 w-full items-center justify-between rounded-2xl bg-blue-600 px-5 text-white shadow-md shadow-blue-600/20 transition-colors hover:bg-blue-700 focus:outline-none focus-visible:ring-4 focus-visible:ring-blue-600/30 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 disabled:shadow-none"
-          >
-            <span className="flex items-center gap-2 font-semibold">
-              {paying && <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />}
-              {paying ? "در حال پرداخت…" : allFree ? "دریافت رایگان" : "تأیید و پرداخت"}
-            </span>
-            {!allFree && <span className="text-lg font-bold">{formatPrice(total)}</span>}
-          </button>
-          <p className="mt-2 text-center text-xs text-gray-500">
-            {unavailable.length > 0
-              ? "اول کتاب‌هایی را که موجود نیستند از سبد حذف کنید."
-              : priceChanged.length > 0
-              ? "اول قیمت‌های جدید را تأیید کنید."
-              : shortage > 0
-              ? "برای پرداخت، کیف پول را شارژ کنید."
-              : readyToPay
-              ? "کتاب‌ها بلافاصله به کتابخانهٔ شما اضافه می‌شوند. خرید کتاب الکترونیکی بازپرداخت ندارد."
-              : ""}
-          </p>
+        {/* ═══ نوار پرداخت ═══
+            Mobile: fixed to the bottom of the screen. md+: the last card of the sticky side column.
+            این صفحه نوار ناوبری پایین برنامه را ندارد (مثل بقیهٔ صفحه‌های داخلی)، پس bottom-0 درست است. */}
+        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-gray-200 bg-white/95 backdrop-blur md:static md:z-auto md:mx-0 md:mt-4 md:rounded-2xl md:border md:bg-white md:shadow-sm md:backdrop-blur-none">
+          <div className="mx-auto max-w-md px-4 py-3 md:p-4">
+            <button
+              type="button"
+              onClick={handlePay}
+              disabled={!canPay}
+              aria-busy={paying}
+              className="flex h-14 w-full items-center justify-between rounded-2xl bg-blue-600 px-5 text-white shadow-md shadow-blue-600/20 transition-colors hover:bg-blue-700 focus:outline-none focus-visible:ring-4 focus-visible:ring-blue-600/30 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 disabled:shadow-none"
+            >
+              <span className="flex items-center gap-2 font-semibold">
+                {paying && <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />}
+                {paying ? "در حال پرداخت…" : allFree ? "دریافت رایگان" : "تأیید و پرداخت"}
+              </span>
+              {!allFree && <span className="text-lg font-bold">{formatPrice(total)}</span>}
+            </button>
+            <p className="mt-2 text-center text-xs text-gray-500">
+              {unavailable.length > 0
+                ? "اول کتاب‌هایی را که موجود نیستند از سبد حذف کنید."
+                : priceChanged.length > 0
+                ? "اول قیمت‌های جدید را تأیید کنید."
+                : shortage > 0
+                ? "برای پرداخت، کیف پول را شارژ کنید."
+                : readyToPay
+                ? "کتاب‌ها بلافاصله به کتابخانهٔ شما اضافه می‌شوند. خرید کتاب الکترونیکی بازپرداخت ندارد."
+                : ""}
+            </p>
+          </div>
+        </div>
         </div>
       </div>
     </PageShell>
@@ -294,7 +302,7 @@ export default function CartPage({ onBack }) {
 function PageShell({ count, onBack, children }) {
   return (
     <div dir="rtl" className="min-h-screen bg-gray-100">
-      <div className="mx-auto w-full max-w-md">
+      <div className="mx-auto w-full max-w-md md:max-w-5xl">
         <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-gray-200 bg-gray-100/90 px-2 backdrop-blur">
           <button
             type="button"
@@ -313,10 +321,11 @@ function PageShell({ count, onBack, children }) {
             )}
           </h1>
           {/* 🔌 صفحهٔ اعلان‌ها هنوز ساخته نشده: <Link to="/notifications"> */}
+          {/* md+: the side nav has the bell; invisible keeps the title centred */}
           <a
             href="/notifications"
             aria-label="اعلان‌ها"
-            className="flex h-10 w-10 items-center justify-center rounded-xl text-xl hover:bg-gray-200"
+            className="flex h-10 w-10 items-center justify-center rounded-xl text-xl hover:bg-gray-200 md:invisible"
           >
             🔔
           </a>

@@ -152,8 +152,9 @@ export default function BookDetailPage() {
   ].filter(Boolean);
 
   return (
-    <div dir="rtl" className="min-h-screen bg-gray-100 pb-28">
-      <div className="mx-auto w-full max-w-md">
+    <div dir="rtl" className="min-h-screen bg-gray-100 pb-28 md:pb-12">
+      {/* md+: a wider page with two columns, see the grid below */}
+      <div className="mx-auto w-full max-w-md md:max-w-5xl">
         {/* ═══ نوار بالا ═══ */}
         <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-gray-200 bg-gray-100/90 px-2 backdrop-blur">
           {/* در راست‌چین، «برگشت» سمت راست است و فلشش به راست اشاره می‌کند */}
@@ -166,22 +167,28 @@ export default function BookDetailPage() {
             →
           </button>
           <h1 className="text-base font-bold text-gray-900">مشخصات کتاب</h1>
+          {/* md+: the side nav already has the cart with its badge. invisible (not hidden) keeps
+              the title centred, and also takes the link out of the tab order. */}
           <Link
             to="/cart"
             aria-label={cartCount > 0 ? `سبد خرید، ${toFaNumber(cartCount)} کتاب` : "سبد خرید"}
-            className="relative flex h-10 w-10 items-center justify-center rounded-xl text-xl hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600/40"
+            className="relative flex h-10 w-10 items-center justify-center rounded-xl text-xl hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600/40 md:invisible"
           >
             🛒
             <CartBadge count={cartCount} />
           </Link>
         </header>
 
+        {/* md+: two columns. Right (RTL start): the cover with the buy card under it, sticky
+            while the details scroll. Left: the details. Below md both wrappers are plain blocks. */}
+        <div className="md:grid md:grid-cols-[16rem_minmax(0,1fr)] md:items-start md:gap-8 md:px-6 md:pt-8 lg:grid-cols-[19rem_minmax(0,1fr)] lg:gap-12">
+        <div className="md:sticky md:top-22">
         {/* ═══ جلد کتاب ═══ */}
-        <section className="relative px-4 pb-6 pt-6">
+        <section className="relative px-4 pb-6 pt-6 md:p-0">
           {/* هاله آبی ملایم پشت جلد */}
           <div className="absolute inset-x-10 top-10 h-56 rounded-full bg-blue-200/50 blur-3xl" />
 
-          <div className="relative mx-auto w-44">
+          <div className="relative mx-auto w-44 md:w-full">
             {showCover ? (
               <img
                 src={book.cover}
@@ -198,7 +205,7 @@ export default function BookDetailPage() {
           </div>
 
           {/* دکمه‌ی اشتراک، گوشه چپ (در راست‌چین، طرف مقابل دکمه برگشت) */}
-          <div className="absolute left-4 top-6 flex flex-col gap-2">
+          <div className="absolute left-4 top-6 flex flex-col gap-2 md:left-3 md:top-3">
             {/* TODO: دکمه‌ی «نشان کردن» (قلب) فعلاً پنهان است چون مدلی برای نشان‌شده‌ها در بکند نیست.
                 وقتی ساخته شد: POST/DELETE /catalog/books/<id>/bookmark/، با به‌روزرسانی خوش‌بینانه
                 (اول UI عوض شود و اگر درخواست شکست خورد برگردد). */}
@@ -213,8 +220,58 @@ export default function BookDetailPage() {
           </div>
         </section>
 
-        {/* ═══ عنوان و پدیدآورندگان ═══ */}
-        <section className="px-5 text-center">
+        {/* ═══ نوار خرید ═══
+            Mobile: fixed to the bottom of the screen, so its place in the markup doesn't matter there.
+            md+: a card under the cover, kept in view by the sticky column around it.
+            این صفحه مثل بقیه‌ی صفحه‌های داخلی نوار ناوبری پایین برنامه (BottomNavbar) را ندارد؛
+            آن نوار فقط در صفحه‌ی اصلی است. پس bottom-0 درست است. */}
+        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-gray-200 bg-white/95 backdrop-blur md:static md:z-auto md:mt-6 md:rounded-2xl md:border md:bg-white md:shadow-sm md:backdrop-blur-none">
+          <div className="mx-auto flex max-w-md items-center gap-3 px-4 py-3 md:flex-col md:items-stretch md:p-4">
+            {isOwned ? (
+              // The reader page (BookReaderPage) fetches a signed link and shows the PDF
+              <Link
+                to={`/library/${book.id}/read`}
+                className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-green-600 font-semibold text-white hover:bg-green-700 md:flex-none"
+              >
+                <span aria-hidden="true">📖</span>
+                خواندن کتاب
+              </Link>
+            ) : (
+              <>
+                <div className="shrink-0 md:flex md:items-baseline md:justify-between">
+                  <p className="text-xs text-gray-500">قیمت</p>
+                  <p className="font-bold text-gray-900">{formatPrice(book.price)}</p>
+                </div>
+                {inCart ? (
+                  <Link
+                    to="/cart"
+                    className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl border-2 border-blue-600 font-semibold text-blue-600 hover:bg-blue-50 md:flex-none"
+                  >
+                    <span aria-hidden="true">✓</span>
+                    در سبد خرید · مشاهده سبد
+                  </Link>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleAddToCart}
+                    disabled={isPending(book.id)}
+                    className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 font-semibold text-white shadow-md shadow-blue-600/20 hover:bg-blue-700 focus:outline-none focus-visible:ring-4 focus-visible:ring-blue-600/30 disabled:cursor-wait disabled:bg-blue-300 md:flex-none"
+                  >
+                    <span aria-hidden="true">🛒</span>
+                    {/* Free books too: every book goes through the cart, one purchase path */}
+                    {isPending(book.id) ? "در حال افزودن…" : "افزودن به سبد خرید"}
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+        </div>
+
+        <div className="md:min-w-0">
+        {/* ═══ عنوان و پدیدآورندگان ═══
+            md:text-right, not text-start: start would put the LTR original title on the left */}
+        <section className="px-5 text-center md:px-0 md:text-right">
           {book.category && (
             // TODO: صفحه‌ی اصلی هنوز ?category را از آدرس نمی‌خواند (تب فعال فقط state است)،
             // پس این برچسب فعلاً لینک نیست. وقتی خواند: <Link to={`/?category=${book.category.id}`}>
@@ -245,7 +302,7 @@ export default function BookDetailPage() {
         </section>
 
         {/* ═══ کارت قیمت ═══ */}
-        <section className="mx-4 mt-6 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+        <section className="mx-4 mt-6 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm md:mx-0">
           <div className="flex items-baseline justify-between">
             <span className="text-sm text-gray-500">قیمت</span>
             {isFree ? (
@@ -274,7 +331,7 @@ export default function BookDetailPage() {
 
         {/* ═══ مشخصات کلیدی ═══ */}
         {specs.length > 0 && (
-          <section className="mx-4 mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-gray-200 bg-gray-200 shadow-sm">
+          <section className="mx-4 mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-gray-200 bg-gray-200 shadow-sm md:mx-0 lg:grid-cols-4">
             {specs.map((spec) => (
               <div key={spec.label} className="bg-white p-4">
                 <p className="flex items-center gap-1.5 text-xs text-gray-500">
@@ -289,7 +346,7 @@ export default function BookDetailPage() {
 
         {/* ═══ درباره کتاب ═══ */}
         {book.description && (
-          <section className="mx-4 mt-6">
+          <section className="mx-4 mt-6 md:mx-0">
             <h3 className="mb-2 text-lg font-bold text-gray-900">درباره کتاب</h3>
             <p
               dir="auto"
@@ -314,7 +371,7 @@ export default function BookDetailPage() {
         )}
 
         {/* ═══ شناسنامه کتاب ═══ */}
-        <section className="mx-4 mt-6">
+        <section className="mx-4 mt-6 md:mx-0">
           <h3 className="mb-2 text-lg font-bold text-gray-900">شناسنامه کتاب</h3>
           <dl className="divide-y divide-gray-100 rounded-2xl border border-gray-200 bg-white px-4 text-sm shadow-sm">
             <div className="flex items-center justify-between gap-4 py-3">
@@ -365,52 +422,7 @@ export default function BookDetailPage() {
             </ul>
           )}
         </section>
-      </div>
-
-      {/* ═══ نوار خرید چسبیده به پایین ═══
-          این صفحه مثل بقیه‌ی صفحه‌های داخلی (فرم کتاب، درخواست شابک) نوار ناوبری پایین برنامه
-          (BottomNavbar) را ندارد؛ آن نوار فقط در صفحه‌ی اصلی است. پس bottom-0 درست است.
-          اگر روزی layout مشترکی با نوار پایین (ارتفاع h-14) برای همه‌ی صفحه‌ها ساخته شد،
-          این نوار باید bottom-14 شود (و pb صفحه و جای toast هم به همان اندازه بالا برود). */}
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-gray-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-md items-center gap-3 px-4 py-3">
-          {isOwned ? (
-            // The reader page (BookReaderPage) fetches a signed link and shows the PDF
-            <Link
-              to={`/library/${book.id}/read`}
-              className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-green-600 font-semibold text-white hover:bg-green-700"
-            >
-              <span aria-hidden="true">📖</span>
-              خواندن کتاب
-            </Link>
-          ) : (
-            <>
-              <div className="shrink-0">
-                <p className="text-xs text-gray-500">قیمت</p>
-                <p className="font-bold text-gray-900">{formatPrice(book.price)}</p>
-              </div>
-              {inCart ? (
-                <Link
-                  to="/cart"
-                  className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl border-2 border-blue-600 font-semibold text-blue-600 hover:bg-blue-50"
-                >
-                  <span aria-hidden="true">✓</span>
-                  در سبد خرید · مشاهده سبد
-                </Link>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleAddToCart}
-                  disabled={isPending(book.id)}
-                  className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 font-semibold text-white shadow-md shadow-blue-600/20 hover:bg-blue-700 focus:outline-none focus-visible:ring-4 focus-visible:ring-blue-600/30 disabled:cursor-wait disabled:bg-blue-300"
-                >
-                  <span aria-hidden="true">🛒</span>
-                  {/* Free books too: every book goes through the cart, one purchase path */}
-                  {isPending(book.id) ? "در حال افزودن…" : "افزودن به سبد خرید"}
-                </button>
-              )}
-            </>
-          )}
+        </div>
         </div>
       </div>
 
@@ -418,7 +430,7 @@ export default function BookDetailPage() {
       {toast && (
         <div
           role="status"
-          className="fixed inset-x-0 bottom-24 z-30 mx-auto w-fit rounded-full bg-gray-900 px-4 py-2 text-sm text-white shadow-lg"
+          className="fixed inset-x-0 bottom-24 z-30 mx-auto w-fit md:bottom-8 rounded-full bg-gray-900 px-4 py-2 text-sm text-white shadow-lg"
         >
           {toast}
         </div>
