@@ -1239,6 +1239,11 @@ const styles = `
   line-height: 1.7;
 }
 .abw *, .abw *::before, .abw *::after { box-sizing: border-box; }
+/* Desktop (Tailwind md): the short form leaves most of a tall screen empty, so the page
+   background fills the screen height instead of stopping under the form */
+@media (min-width: 48rem) {
+  .abw { min-height: 100vh; }
+}
 
 .abw-header {
   display: grid;
