@@ -21,7 +21,7 @@ export default function BookSection({ title, books }) {
 
       {/* Mobile: a horizontally scrolling row (RTL, so it starts on the right).
           md and up: a grid, so desktop shows all books without sideways scrolling */}
-      <div className="flex gap-2 overflow-x-auto pb-4 scroll-smooth md:grid md:grid-cols-3 md:gap-6 md:overflow-visible lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+      <div className="flex gap-2 overflow-x-auto pb-4 scroll-smooth md:grid md:grid-cols-3 md:gap-6 md:overflow-visible xl:grid-cols-5 2xl:grid-cols-6">
         {books.map((book) => (
           <div
             key={book.id}

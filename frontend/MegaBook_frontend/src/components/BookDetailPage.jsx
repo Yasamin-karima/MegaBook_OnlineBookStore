@@ -331,7 +331,7 @@ export default function BookDetailPage() {
 
         {/* ═══ مشخصات کلیدی ═══ */}
         {specs.length > 0 && (
-          <section className="mx-4 mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-gray-200 bg-gray-200 shadow-sm md:mx-0 lg:grid-cols-4">
+          <section className="mx-4 mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-gray-200 bg-gray-200 shadow-sm md:mx-0 xl:grid-cols-4">
             {specs.map((spec) => (
               <div key={spec.label} className="bg-white p-4">
                 <p className="flex items-center gap-1.5 text-xs text-gray-500">
