@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     'library',
     'dashboard',
     'support',
+    'reviews',
 ]
 
 MIDDLEWARE = [

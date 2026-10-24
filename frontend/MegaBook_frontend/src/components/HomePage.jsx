@@ -16,6 +16,8 @@ function toCardProps(book) {
     badge: book.category?.name ?? null,
     // The logged-in user uploaded (later: bought) it: no cart button, a "read" link instead
     isOwned: Boolean(book.is_owned),
+    // Average of the visible reviews, or null: the card then shows no rating at all
+    rating: book.rating_average,
   };
 }
 

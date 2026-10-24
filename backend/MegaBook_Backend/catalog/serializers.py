@@ -324,10 +324,22 @@ class BookListSerializer(serializers.ModelSerializer):
     # True if the logged-in user uploaded (later: bought) the book: they can read it and
     # must not buy it. Computed by catalog.ownership.annotate_is_owned in the view.
     is_owned = serializers.BooleanField(read_only=True, default=False)
+    # Visible reviews only (reviews.ratings.annotate_rating in the view). With no
+    # reviews: count 0 and average null, so the page shows «هنوز امتیازی ندارد», not 0 stars.
+    rating_count = serializers.IntegerField(read_only=True, default=0)
+    rating_average = serializers.SerializerMethodField()
 
     class Meta:
         model = Book
-        fields = ["id", "title", "authors", "cover", "price", "category", "language", "created_at", "is_owned"]
+        fields = [
+            "id", "title", "authors", "cover", "price", "category", "language", "created_at", "is_owned",
+            "rating_average", "rating_count",
+        ]
+
+    def get_rating_average(self, book):
+        # One decimal (4.5), or null when the book has no visible review
+        average = getattr(book, "rating_average", None)
+        return None if average is None else round(average, 1)
 
 
 class BookDetailSerializer(BookListSerializer):
@@ -338,12 +350,16 @@ class BookDetailSerializer(BookListSerializer):
     # نام ناشر یا null (DRF برای رابطه‌ی خالی خودش null می‌گذارد)
     publisher = serializers.SlugRelatedField(read_only=True, slug_field="name")
     file_size = serializers.SerializerMethodField()
+    # For the reviews section (reviews.eligibility.annotate_review_flags in the view):
+    # the user may write a review / already has one (in any state)
+    can_review = serializers.BooleanField(read_only=True, default=False)
+    has_review = serializers.BooleanField(read_only=True, default=False)
 
     class Meta(BookListSerializer.Meta):
         fields = BookListSerializer.Meta.fields + [
             "original_title", "isbn", "translators", "publisher", "tags",
             "description", "page_count", "publication_year", "edition",
-            "sample_file", "file_size",
+            "sample_file", "file_size", "can_review", "has_review",
         ]
 
     def get_file_size(self, book):

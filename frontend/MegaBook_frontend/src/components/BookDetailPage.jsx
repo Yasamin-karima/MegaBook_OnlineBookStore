@@ -3,7 +3,8 @@ import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { getBook } from "../api/catalog";
 import useCart from "../hooks/useCart";
 import useGoBack from "../hooks/useGoBack";
-import { formatFileSize, formatPrice, languageName, toFaNumber, toFaYear } from "../utils/format";
+import { formatFileSize, formatPrice, formatRating, languageName, toFaNumber, toFaYear } from "../utils/format";
+import BookReviews from "./BookReviews";
 
 // ═════════════════════════════════════════════════════════════
 // صفحه‌ی یک کتاب: /books/:id (عمومی، ورود لازم نیست)
@@ -13,6 +14,8 @@ import { formatFileSize, formatPrice, languageName, toFaNumber, toFaYear } from 
 //   • cover و sample_file آدرس کامل‌اند یا null.
 //   • book_file هرگز در این پاسخ نمی‌آید (محتوای پولی)؛ فقط file_size (بایت).
 //   • کتاب ناموجود یا تاییدنشده (pending / rejected) => 404.
+//   • rating_average (یک رقم اعشار، یا null) و rating_count فقط از نظرهای نمایش‌داده‌شده‌اند؛
+//     can_review / has_review برای بخش نظرها (BookReviews).
 // ═════════════════════════════════════════════════════════════
 
 // «مت هیگ، فلانی»
@@ -74,6 +77,19 @@ export default function BookDetailPage() {
 
   // تایمر پیام کوتاه موقع بسته شدن صفحه پاک شود
   useEffect(() => () => clearTimeout(toastTimer.current), []);
+
+  // After a review is written, edited or deleted: the book again (rating summary, has_review),
+  // quietly, without the loading skeleton. Ignored if the user has moved to another book.
+  function refreshBook() {
+    const key = requestKey;
+    getBook(id)
+      .then((data) => setResult((prev) => (prev.key === key ? { key, status: "ready", book: data } : prev)))
+      .catch(() => {});
+  }
+
+  function scrollToReviews() {
+    document.getElementById("reviews")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   // پیام کوتاه پایین صفحه که بعد از ۲.۵ ثانیه محو می‌شود؛ پیام جدید تایمر قبلی را از نو شروع می‌کند
   function showToast(message) {
@@ -299,6 +315,24 @@ export default function BookDetailPage() {
               </p>
             )}
           </div>
+
+          {/* خلاصه‌ی امتیاز؛ لمسش به بخش نظرها می‌برد */}
+          <button
+            type="button"
+            onClick={scrollToReviews}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1 text-sm text-gray-600 ring-1 ring-gray-200 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600/40"
+          >
+            {book.rating_count > 0 ? (
+              <>
+                <span aria-hidden="true">⭐</span>
+                <span className="font-bold text-gray-900">{formatRating(book.rating_average)}</span>
+                <span aria-hidden="true">·</span>
+                {toFaNumber(book.rating_count)} نظر
+              </>
+            ) : (
+              "هنوز امتیازی ندارد"
+            )}
+          </button>
         </section>
 
         {/* ═══ کارت قیمت ═══ */}
@@ -422,6 +456,17 @@ export default function BookDetailPage() {
             </ul>
           )}
         </section>
+
+        {/* ═══ نظرات خوانندگان ═══
+            key: a new book starts the section from scratch (list, form, expanded state) */}
+        <BookReviews
+          key={book.id}
+          bookId={book.id}
+          canReview={Boolean(book.can_review)}
+          hasReview={Boolean(book.has_review)}
+          onChanged={refreshBook}
+          showToast={showToast}
+        />
         </div>
         </div>
       </div>

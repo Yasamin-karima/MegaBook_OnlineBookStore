@@ -684,4 +684,7 @@ location /media/ {
 - [ ] پورت 5432 دیتابیس به اینترنت باز نباشد (Compose فعلی آن را روی میزبان باز می‌کند)
 - [ ] `MEGABOOK_CARD_NUMBER` و `MEGABOOK_CARD_HOLDER`
 - [ ] پین کردن نسخهٔ پکیج‌ها
-- [ ] `docker compose exec backend python manage.py check --deploy`
+- [ ] `docker compose exec backend python manage.py check --deploy` بدون خطا. امروز این موارد را گزارش می‌کند:
+  - `mail.E001`: `MAILERS` روی console backend است. یک backend ایمیل واقعی لازم است، یا تصمیم بگیرید ایمیل نفرستید.
+  - `SECURE_HSTS_SECONDS`، `SECURE_SSL_REDIRECT`، `SESSION_COOKIE_SECURE` و `CSRF_COOKIE_SECURE` تنظیم نشده‌اند. اگر nginx خودش HTTPS را برقرار می‌کند، `SECURE_PROXY_SSL_HEADER` هم لازم است.
+  - `security.W009`: کلید فعلی محیط توسعه ضعیف است.

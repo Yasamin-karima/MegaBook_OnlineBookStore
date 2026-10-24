@@ -22,6 +22,8 @@ from django.urls import path, include
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('accounts/', include('accounts.urls')),
+    # A book's reviews: /catalog/books/<id>/reviews/ (the reviews app)
+    path('catalog/books/<int:book_id>/reviews/', include('reviews.urls')),
     path('catalog/', include('catalog.urls')),
     path('book-requests/', include('book_requests.urls')),
     path('wallet/', include('wallet.urls')),

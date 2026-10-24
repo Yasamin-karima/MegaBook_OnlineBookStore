@@ -8,6 +8,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from MegaBook_Backend import private_files
+from reviews.eligibility import annotate_review_flags
+from reviews.ratings import annotate_rating
 
 from .book_sources import SourceUnavailable, lookup_isbn
 from .isbn import InvalidISBN, normalize_isbn
@@ -62,6 +64,8 @@ class BookListCreateView(generics.ListCreateAPIView):
         queryset = approved_books().select_related("category").prefetch_related("authors")
         # is_owned for the logged-in user (always false for guests)
         queryset = annotate_is_owned(queryset, self.request.user)
+        # Average and count of visible reviews, as subqueries in the same query (reviews.ratings)
+        queryset = annotate_rating(queryset)
 
         category = self.request.query_params.get("category")
         if category:
@@ -86,7 +90,9 @@ class BookDetailView(generics.RetrieveAPIView):
             .select_related("category", "publisher")
             .prefetch_related("authors", "translators", "tags")
         )
-        return annotate_is_owned(queryset, self.request.user)
+        queryset = annotate_rating(annotate_is_owned(queryset, self.request.user))
+        # can_review / has_review: whether the page shows «نظر بدهید» (reviews.eligibility)
+        return annotate_review_flags(queryset, self.request.user)
 
 
 LOOKUP_NOT_FOUND = "اطلاعات این شابک در Open Library پیدا نشد. لطفاً مشخصات کتاب را دستی وارد کنید."

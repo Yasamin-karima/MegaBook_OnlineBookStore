@@ -2,18 +2,19 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { LuBookOpen, LuCheck, LuShoppingCart } from 'react-icons/lu';
 import useCart from '../hooks/useCart';
-import { formatPrice } from '../utils/format';
+import { formatPrice, formatRating } from '../utils/format';
 
 //   id:    شناسه‌ی کتاب؛ کلیک روی کارت به /books/:id می‌رود
 //   image: آدرس کامل جلد یا null
 //   badge: نام دسته‌بندی یا null (اگر null باشد، badge نمایش داده نمی‌شود)
 //   isOwned: کاربر این کتاب را دارد (بارگذاری یا خریده)؛ به‌جای دکمه‌ی سبد، لینک «خواندن»
+//   rating: میانگین امتیاز (عدد) یا null وقتی کتاب هنوز امتیازی ندارد؛ null یعنی هیچ چیز نمایش داده نشود
 //
 // کلیک روی کارت: عنوان یک Link واقعی است و با after:absolute after:inset-0 ناحیه‌ی کلیکش
 // روی کل کارت کشیده می‌شود (کارت relative است). دکمه‌ی سبد خرید با relative z-10 یک لایه
 // بالاتر از آن ناحیه است، پس کلیک روی دکمه به لینک نمی‌رسد و صفحه عوض نمی‌شود.
 // دکمه داخل <a> گذاشته نشده چون عنصر تعاملی داخل لینک در HTML مجاز نیست.
-const BookCard = ({ id, title, author, price, image, badge, isOwned = false }) => {
+const BookCard = ({ id, title, author, price, image, badge, isOwned = false, rating = null }) => {
   const navigate = useNavigate();
   const location = useLocation();
   // Every card reads the one shared cart (CartProvider), so all cards and the
@@ -75,10 +76,19 @@ const BookCard = ({ id, title, author, price, image, badge, isOwned = false }) =
           </Link>
         </h3>
 
-        {/* Author */}
-        <p dir="auto" className="text-sm text-gray-600 mb-2">
-          {author}
-        </p>
+        {/* Author, and the average rating when there is one. Plain text, so a click on it
+            still reaches the stretched link of the card. */}
+        <div className="mb-2 flex items-start justify-between gap-2">
+          <p dir="auto" className="min-w-0 text-sm text-gray-600">
+            {author}
+          </p>
+          {rating != null && (
+            <span className="shrink-0 text-xs font-semibold text-gray-700" aria-label={`امتیاز ${formatRating(rating)} از ۵`}>
+              <span aria-hidden="true">⭐ </span>
+              {formatRating(rating)}
+            </span>
+          )}
+        </div>
 
         {/* Price */}
         <div className="flex items-center justify-between">

@@ -1,0 +1,24 @@
+{% extends "admin/base_site.html" %}
+{% comment %}
+Intermediate page for the "hide" action: asks for the reason, then posts the same
+action again with apply=1 and the selected ids, which the action then runs.
+{% endcomment %}
+
+{% block content %}
+<p>این نظرها برای همه به‌جز نویسنده‌شان پنهان می‌شوند و در امتیاز کتاب حساب نمی‌شوند:</p>
+<ul>
+  {% for obj in queryset %}<li>{{ obj }}: {{ obj.body|truncatechars:120 }}</li>{% endfor %}
+</ul>
+
+<form method="post">
+  {% csrf_token %}
+  {% for obj in queryset %}
+    <input type="hidden" name="{{ action_checkbox_name }}" value="{{ obj.pk }}">
+  {% endfor %}
+  <input type="hidden" name="action" value="{{ action }}">
+  <input type="hidden" name="apply" value="1">
+  {{ form.as_p }}
+  <input type="submit" value="پنهان کن" class="default">
+  <a href="." class="button cancel-link">انصراف</a>
+</form>
+{% endblock %}

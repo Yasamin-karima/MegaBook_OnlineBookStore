@@ -26,6 +26,16 @@ export function toFaYear(n) {
   return Number(n).toLocaleString("fa-IR", { useGrouping: false });
 }
 
+// میانگین امتیاز با یک رقم اعشار: 4.5 -> «۴٫۵»، 4 -> «۴٫۰»
+export function formatRating(average) {
+  return Number(average).toLocaleString("fa-IR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+
+// تاریخ شمسی از رشته‌ی ISO سرور: «۲ آبان ۱۴۰۵». fa-IR خودش تقویم شمسی است.
+export function formatDate(iso) {
+  return new Date(iso).toLocaleDateString("fa-IR", { year: "numeric", month: "long", day: "numeric" });
+}
+
 // قیمت به تومان (عدد صحیح)؛ صفر یعنی رایگان
 export function formatPrice(price) {
   if (price === 0) return "رایگان";
