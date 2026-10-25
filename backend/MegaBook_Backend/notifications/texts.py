@@ -3,14 +3,12 @@ type and params), when it is served. Changing a sentence here changes it for eve
 notification, old and new.
 
 Links:
-  {"kind": "app", "path": "/books/12"}    a page of the site (the frontend navigates)
-  {"kind": "admin", "url": "http://…"}    a Django admin page, for staff notifications
+  {"kind": "app", "path": "/books/12"}    a page of the site (the frontend navigates);
+                                          staff notifications open the admin dashboard
   None                                    the source was deleted: not clickable
 
 Texts never say how many people asked for a book or who uploaded it.
 """
-from django.urls import reverse
-
 from .models import Notification
 
 Type = Notification.Type
@@ -24,11 +22,6 @@ def _toman(amount):
 
 def _app(path):
     return {"kind": "app", "path": path}
-
-
-def _admin(request, name, pk):
-    url = reverse(f"admin:{name}_change", args=[pk])
-    return {"kind": "admin", "url": request.build_absolute_uri(url) if request else url}
 
 
 def _conversation_path(n):
@@ -88,19 +81,19 @@ def render(n, request=None):
             link = _app(f"/books/{n.review.book_id}#reviews") if n.review_id else None
             return _out("🙈", f"نظر شما دربارهٔ کتاب «{title}» توسط مدیر پنهان شد. دلیل: {reason}", link)
         case Type.STAFF_NEW_UPLOAD:
-            link = _admin(request, "catalog_book", n.book_id) if n.book_id else None
+            link = _app(f"/admin/books?book={n.book_id}") if n.book_id else None
             return _out("📥", f"کتاب تازه‌ای در انتظار بررسی است: «{title}»", link)
         case Type.STAFF_NEW_REQUEST:
-            link = _admin(request, "book_requests_bookrequest", n.book_request_id) if n.book_request_id else None
+            link = _app(f"/admin/requests?filter=all&request={n.book_request_id}") if n.book_request_id else None
             return _out("🔎", f"درخواست تازه برای کتاب «{title}» ثبت شد.", link)
         case Type.STAFF_USER_MESSAGE:
-            link = _admin(request, "support_conversation", n.conversation_id) if n.conversation_id else None
+            link = _app(f"/admin/conversations?filter=all&c={n.conversation_id}") if n.conversation_id else None
             return _out("💬", f"کاربر در گفت‌وگوی «{title}» پیام تازه نوشت.", link)
         case Type.STAFF_NEW_TOPUP:
-            link = _admin(request, "wallet_topuprequest", n.topup_request_id) if n.topup_request_id else None
+            link = _app("/admin/wallet?tab=topups") if n.topup_request_id else None
             return _out("💳", f"درخواست شارژ کارت‌به‌کارت تازه به مبلغ {amount} در انتظار بررسی است.", link)
         case Type.STAFF_NEW_WITHDRAWAL:
-            link = _admin(request, "wallet_withdrawalrequest", n.withdrawal_request_id) if n.withdrawal_request_id else None
+            link = _app("/admin/wallet?tab=withdrawals") if n.withdrawal_request_id else None
             return _out("🏦", f"درخواست برداشت تازه به مبلغ {amount} در انتظار پرداخت است.", link)
     return _out("🔔", n.get_type_display(), None)
 

@@ -65,8 +65,8 @@ export default function NotificationsPage() {
       markNotificationRead(notification.id).catch(() => {}).finally(refreshUnread);
     }
     const link = notification.link;
+    // Staff notifications link into the admin dashboard (/admin/...), a page of this app too
     if (link?.kind === "app") navigate(link.path);
-    else if (link?.kind === "admin") window.open(link.url, "_blank", "noopener");
   }
 
   async function handleMarkAll() {
@@ -182,7 +182,7 @@ function NotificationRow({ notification, onOpen }) {
         </span>
         <span className="mt-1 block text-xs text-gray-400">
           {formatRelativeTime(notification.created_at)}
-          {notification.link?.kind === "admin" && " · پنل مدیریت"}
+          {notification.link?.path?.startsWith("/admin") && " · داشبورد مدیریت"}
         </span>
       </span>
       {unread && (

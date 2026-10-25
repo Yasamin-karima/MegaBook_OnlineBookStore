@@ -412,8 +412,8 @@ class ApiTests(NotificationTestBase):
         self.client.post(reverse("notification_read", args=[mine.pk]))
         self.assertIsNone(of(self.admin2).get().read_at)
         item = self.client.get(reverse("notifications")).data["results"][0]
-        self.assertEqual(item["link"]["kind"], "admin")
-        self.assertTrue(item["link"]["url"].endswith(f"/admin/catalog/book/{book.pk}/change/"))
+        # Staff notifications open the React admin dashboard, not the Django admin
+        self.assertEqual(item["link"], {"kind": "app", "path": f"/admin/books?book={book.pk}"})
 
     def test_older_than_90_days_is_never_returned(self):
         old = self.make(self.buyer, days_ago=RETENTION_DAYS + 1)

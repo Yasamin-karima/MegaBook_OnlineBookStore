@@ -4,8 +4,8 @@ import apiClient from './client';
 //
 // A notification: { id, type, icon (emoji), text (Persian, built by the backend),
 //                   link, created_at, read_at (null = unread) }
-// link: { kind: "app", path: "/books/12" }  a page of this site
-//       { kind: "admin", url: "http://…" }  a Django admin page (staff notifications)
+// link: { kind: "app", path: "/books/12" }  a page of this site (staff ones: the admin
+//                                           dashboard, e.g. "/admin/books?book=12")
 //       null                               its source was deleted: not clickable
 
 // Newest first, 20 per page => { count, next, previous, results }
