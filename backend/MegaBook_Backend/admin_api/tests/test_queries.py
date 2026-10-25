@@ -3,6 +3,7 @@ from django.core.cache import cache
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
+from book_requests.models import RequestEntry
 from catalog.models import Book
 from support import services as support
 from wallet import services as wallet_services
@@ -68,7 +69,7 @@ class QueryCountTests(AdminApiTestCase):
         small = self.queries(f"/admin-api/book-requests/{book_request.pk}/")
         for _ in range(4):
             extra = Make.user()
-            entry = book_request.entries.create(requester=extra)
+            entry = RequestEntry.objects.create(request=book_request, requester=extra)
             support.post_user_message(extra, entry, "سلام")
         self.assertEqual(self.queries(f"/admin-api/book-requests/{book_request.pk}/"), small)
 

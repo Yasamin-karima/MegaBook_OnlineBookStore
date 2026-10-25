@@ -291,6 +291,7 @@ class UploaderReadingTests(APITestCase):
         self.assertTrue(self.client.get(reverse("book_detail", args=[book.pk])).data["is_owned"])
         for blocked in (Book.Status.PENDING, Book.Status.REJECTED):
             book.status = blocked
+            book.rejection_reason = "فایل ناقص" if blocked == Book.Status.REJECTED else ""
             book.save()
             self.assertEqual(self.link(self.uploader, book), 404, blocked)
             self.client.force_authenticate(self.uploader)

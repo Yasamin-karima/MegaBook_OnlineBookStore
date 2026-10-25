@@ -191,7 +191,7 @@ class CheckoutTests(CheckoutTestBase):
         ok = BookFactory.make(self.seller1, price=10_000)
         gone = BookFactory.make(self.seller2, price=10_000)
         self.add(ok, gone)
-        gone.status = Book.Status.REJECTED
+        gone.status, gone.rejection_reason = Book.Status.REJECTED, "فایل ناقص"
         gone.save()
         response = self.checkout()
         self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
@@ -273,7 +273,7 @@ class AfterPurchaseTests(CheckoutTestBase):
     def test_still_readable_after_leaving_the_store(self):
         self.add(self.book)
         self.checkout()
-        self.book.status = Book.Status.REJECTED
+        self.book.status, self.book.rejection_reason = Book.Status.REJECTED, "فایل ناقص"
         self.book.save()
         self.assertTrue(self.book.can_download_file(self.buyer))
         self.assertEqual(self.client.get(reverse("library")).data["count"], 1)
