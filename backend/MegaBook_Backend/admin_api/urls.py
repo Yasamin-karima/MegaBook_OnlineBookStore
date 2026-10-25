@@ -32,4 +32,7 @@ urlpatterns = [
     path("book-requests/<int:pk>/", request_queue.RequestDetailView.as_view(), name="admin_api_request"),
     path("book-requests/<int:pk>/mark-reviewed/", request_queue.MarkReviewedView.as_view(), name="admin_api_request_reviewed"),
     *conversation_urls("request-entries", conversations.find_entry, "entry"),
+    # The conversations inbox
+    path("conversations/", conversations.InboxView.as_view(), name="admin_api_conversations"),
+    path("conversations/<int:pk>/", conversations.InboxItemView.as_view(), name="admin_api_conversation"),
 ]
