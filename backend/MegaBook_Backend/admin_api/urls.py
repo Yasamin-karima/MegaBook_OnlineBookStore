@@ -1,7 +1,7 @@
 """/admin-api/: the React admin dashboard's API. Staff only; everyone else gets 404."""
 from django.urls import path
 
-from . import books, conversations, request_queue, taxonomy
+from . import books, conversations, request_queue, taxonomy, wallet
 
 
 def conversation_urls(prefix, find_parent, name):
@@ -35,4 +35,18 @@ urlpatterns = [
     # The conversations inbox
     path("conversations/", conversations.InboxView.as_view(), name="admin_api_conversations"),
     path("conversations/<int:pk>/", conversations.InboxItemView.as_view(), name="admin_api_conversation"),
+    # Wallet
+    path("wallet/topups/", wallet.RequestListView.as_view(**wallet.TOPUP_LIST), name="admin_api_topups"),
+    path("wallet/topups/<int:pk>/approve/", wallet.TopupDecisionView.as_view(action="approve"), name="admin_api_topup_approve"),
+    path("wallet/topups/<int:pk>/reject/", wallet.TopupDecisionView.as_view(action="reject"), name="admin_api_topup_reject"),
+    path("wallet/withdrawals/", wallet.RequestListView.as_view(**wallet.WITHDRAWAL_LIST), name="admin_api_withdrawals"),
+    path(
+        "wallet/withdrawals/<int:pk>/complete/", wallet.WithdrawalDecisionView.as_view(action="complete"),
+        name="admin_api_withdrawal_complete",
+    ),
+    path(
+        "wallet/withdrawals/<int:pk>/reject/", wallet.WithdrawalDecisionView.as_view(action="reject"),
+        name="admin_api_withdrawal_reject",
+    ),
+    path("wallet/adjustments/", wallet.AdjustmentView.as_view(), name="admin_api_adjustments"),
 ]
