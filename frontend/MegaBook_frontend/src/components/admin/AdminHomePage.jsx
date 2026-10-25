@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { getSummary } from "../../api/admin";
 import AdminShell from "./AdminShell";
-import { formatDate, timeAgo, toFaNumber, wait } from "./adminUtils";
+import { timeAgo, toFaNumber } from "./adminUtils";
 
 // ═════════════════════════════════════════════════════════════
 // داشبورد ادمین — «کارهای امروز» (صفحهٔ اول)
@@ -14,39 +16,14 @@ import { formatDate, timeAgo, toFaNumber, wait } from "./adminUtils";
 // می‌شوند و هیچ‌کدام ذخیره نمی‌شود.
 // ═════════════════════════════════════════════════════════════
 
-// ═════════════════════════════════════════════════════════════
-// 🔌 اتصال به بکند
-// GET /api/admin/summary/
-//   queues: برای هر صف { count, oldest_at }   (oldest_at با Min("created_at"))
-//   finance:
-//     sales_today / sales_month        ← تعداد سفارش‌های موفق
-//     gross_today / gross_month        ← جمع مبلغ سفارش‌ها
-//     commission_today / commission_month ← جمع ردیف‌های commission دفتر (سهم مگابوک)
-//     pending_withdrawals_total        ← جمع برداشت‌های در انتظار (پولی که باید واریز شود)
-//   «امروز» و «این ماه» با تقویم شمسی و ساعت تهران حساب شوند؛ مرز روز را
-//   سرور تعیین کند، نه مرورگر ادمین.
+// داده: GET /admin-api/summary/ (getSummary)
+//   queues: برای هر صف { count, oldest_at }
+//   finance: تعداد سفارش، جمع فروش و سهم مگابوک (ردیف‌های commission دفتر) برای
+//   امروز و این ماه، و جمع برداشت‌های در انتظار.
+//   «امروز» و «این ماه» را سرور با تقویم شمسی و ساعت تهران تعیین می‌کند، نه مرورگر؛
+//   today_label هم از همان‌جا می‌آید.
 // ═════════════════════════════════════════════════════════════
 const HOUR = 60 * 60 * 1000;
-const t = (h) => new Date(Date.now() - h * HOUR).toISOString();
-
-async function fetchSummary() {
-  await wait(500);
-  return {
-    queues: {
-      books: { count: 4, oldest_at: t(30) },
-      requests: { count: 3, oldest_at: t(50) },
-      conversations: { count: 5, oldest_at: t(49) },
-      topups: { count: 2, oldest_at: t(25) },
-      withdrawals: { count: 1, oldest_at: t(18) },
-      reviews: { count: 2, oldest_at: t(5) },
-    },
-    finance: {
-      sales_today: 6, gross_today: 742000, commission_today: 168000,
-      sales_month: 94, gross_month: 11850000, commission_month: 2730000,
-      pending_withdrawals_total: 250000,
-    },
-  };
-}
 
 // اگر قدیمی‌ترین مورد یک صف بیشتر از این ساعت منتظر مانده، کارتش هشدار می‌گیرد
 const OVERDUE_HOURS = 24;
@@ -67,7 +44,7 @@ export default function AdminHomePage() {
   useEffect(() => {
     let cancelled = false;
     const load = () =>
-      fetchSummary()
+      getSummary()
         .then((d) => !cancelled && (setData(d), setState("ready")))
         .catch(() => !cancelled && setState((s) => (s === "ready" ? s : "error")));
     load();
@@ -88,7 +65,7 @@ export default function AdminHomePage() {
           <header className="flex flex-wrap items-end justify-between gap-2">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">کارهای امروز</h1>
-              <p className="mt-1 text-sm text-gray-500">{formatDate(new Date().toISOString())}</p>
+              {data && <p className="mt-1 text-sm text-gray-500">{data.today_label}</p>}
             </div>
             {state === "ready" && (
               <p className="text-sm text-gray-600" aria-live="polite">
@@ -114,8 +91,8 @@ export default function AdminHomePage() {
                   const overdue = !idle && Date.now() - new Date(q.oldest_at).getTime() > OVERDUE_HOURS * HOUR;
                   return (
                     <li key={c.key}>
-                      <a
-                        href={c.href}
+                      <Link
+                        to={c.href}
                         className={`flex h-full flex-col rounded-2xl border p-4 shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600/50 ${
                           idle ? "border-gray-200 bg-white/60 text-gray-400" : overdue ? "border-amber-300 bg-amber-50 hover:bg-amber-100" : "border-gray-200 bg-white hover:bg-gray-50"
                         }`}
@@ -130,7 +107,7 @@ export default function AdminHomePage() {
                         <span className={`mt-1 text-xs ${overdue ? "font-semibold text-amber-800" : "text-gray-500"}`}>
                           {idle ? "موردی منتظر نیست" : `قدیمی‌ترین: ${timeAgo(q.oldest_at)}`}
                         </span>
-                      </a>
+                      </Link>
                     </li>
                   );
                 })}
@@ -152,7 +129,7 @@ export default function AdminHomePage() {
                     <tbody className="divide-y divide-gray-100">
                       {[
                         ["امروز", data.finance.sales_today, data.finance.gross_today, data.finance.commission_today],
-                        ["این ماه", data.finance.sales_month, data.finance.gross_month, data.finance.commission_month],
+                        [`این ماه (${data.month_label})`, data.finance.sales_month, data.finance.gross_month, data.finance.commission_month],
                       ].map(([label, n, gross, mine]) => (
                         <tr key={label}>
                           <th scope="row" className="px-4 py-3 text-right font-semibold text-gray-700">{label}</th>
@@ -165,9 +142,9 @@ export default function AdminHomePage() {
                   </table>
                 </div>
                 {data.finance.pending_withdrawals_total > 0 && (
-                  <a href="/admin/wallet?tab=withdrawals" className="mt-3 inline-block text-sm text-gray-600 hover:text-blue-700">
+                  <Link to="/admin/wallet?tab=withdrawals" className="mt-3 inline-block text-sm text-gray-600 hover:text-blue-700">
                     {toFaNumber(data.finance.pending_withdrawals_total)} تومان برداشت در انتظار واریز است ←
-                  </a>
+                  </Link>
                 )}
               </section>
             </>

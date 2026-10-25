@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
+import { checkReview, getAdminReviews, hideReview, unhideReview } from "../../api/admin";
 import AdminShell from "./AdminShell";
 import {
   Badge, FilterChips, ReasonField, SearchBox, Toast,
-  clone, formatDateTime, httpError, notifyCountsChanged, timeAgo, toFaNumber,
-  useDebounced, useToast, useUrlParam, wait,
+  errorMessage, formatDateTime, notifyCountsChanged, timeAgo, toFaNumber, useDebounced, useToast, useUrlParam,
 } from "./adminUtils";
 
 // ═════════════════════════════════════════════════════════════
@@ -14,27 +15,14 @@ import {
 //   • اینجا فقط نظرهای متن‌دار می‌آیند (امتیاز تنها چیزی برای بررسی ندارد).
 //   • جدیدترین ارسال اول. هر نظر «جدید» یا «بررسی‌شده» است.
 //   • ویرایش نظر توسط نویسنده آن را دوباره «جدید» و بالای لیست می‌آورد.
-//   • پنهان کردن دلیل اجباری دارد. نویسنده نظر پنهان‌شده و دلیلش را می‌بیند؛
-//     اگر ویرایشش کند دوباره منتشر می‌شود و چرخه تکرار می‌شود.
+//   • پنهان کردن دلیل اجباری دارد. نویسنده نظر پنهان‌شده و دلیلش را می‌بیند و اعلان
+//     می‌گیرد (Review.hide در سرور)؛ اگر ویرایشش کند دوباره منتشر می‌شود و چرخه تکرار می‌شود.
+//   • «نمایش دوباره» (تصمیم ۱۳.۳) پنهان‌سازی اشتباه را جبران می‌کند؛ نظر «بررسی‌شده» می‌شود.
 //
 // برخلاف بخش‌های دیگر، اینجا صف + جزئیات نداریم: متن کامل هر نظر در خود
 // لیست است، چون بیشتر نظرها مشکلی ندارند و ادمین فقط باید سریع از آن‌ها رد
 // شود. برای سرعت، کلید «ب» (یا b) روی کارت انتخاب‌شده «بررسی شد» را می‌زند.
 // ═════════════════════════════════════════════════════════════
-
-// ═════════════════════════════════════════════════════════════
-// داده ماک (Mock)
-// ═════════════════════════════════════════════════════════════
-const HOUR = 60 * 60 * 1000;
-const t = (h) => new Date(Date.now() - h * HOUR).toISOString();
-
-let MOCK_REVIEWS = [
-  { id: 91, book: { id: 12, title: "کتابخانه نیمه‌شب" }, author: { id: 11, display_name: "نیما ص." }, rating: 5, text: "یکی از بهترین کتاب‌هایی که امسال خواندم. ترجمه روان است و فایل هم کیفیت خوبی دارد.", status: "visible", checked: false, edited: false, hidden_reason: "", submitted_at: t(2) },
-  { id: 90, book: { id: 21, title: "صد سال تنهایی" }, author: { id: 12, display_name: "سارا م." }, rating: 1, text: "این کتاب مزخرف است، نویسنده‌اش هم همین‌طور. برای خرید ارزان به کانال من در تلگرام بیایید: @cheap_books", status: "visible", checked: false, edited: false, hidden_reason: "", submitted_at: t(5) },
-  { id: 89, book: { id: 42, title: "یادداشت‌های من" }, author: { id: 8, display_name: "رضا م." }, rating: 3, text: "محتوا خوب است ولی چند صفحه تکراری دارد.", status: "visible", checked: false, edited: true, hidden_reason: "", submitted_at: t(9) },
-  { id: 88, book: { id: 12, title: "کتابخانه نیمه‌شب" }, author: { id: 3, display_name: "یاسمین ک." }, rating: 4, text: "پایانش را دوست نداشتم، ولی ارزش خواندن دارد.", status: "visible", checked: true, edited: false, hidden_reason: "", submitted_at: t(40) },
-  { id: 87, book: { id: 21, title: "صد سال تنهایی" }, author: { id: 14, display_name: "مهسا ک." }, rating: 2, text: "لینک دانلود رایگان: example.com/free", status: "hidden", checked: true, edited: false, hidden_reason: "تبلیغ و لینک به سایت دیگر مجاز نیست.", submitted_at: t(70) },
-];
 
 const FILTERS = [
   { key: "new", label: "جدید" },
@@ -44,46 +32,20 @@ const FILTERS = [
 ];
 
 // ═════════════════════════════════════════════════════════════
-// 🔌 اتصال به بکند (فقط is_staff). آدرس‌ها پیشنهادی‌اند.
+// اتصال به بکند (api/admin.js؛ فقط is_staff)
+//
+// GET  /admin-api/reviews/?filter=new|checked|hidden|all&search=  ← نظرها + new_count
+//      فقط نظرهای متن‌دار، به ترتیب جدیدترین submitted_at (هر ویرایش نویسنده آن را جلو می‌برد).
+//      «جدید» = بررسی‌نشده و پنهان‌نشده.
+// POST /admin-api/reviews/<id>/check/ | hide/ {reason} | unhide/  ← نظر به‌روزشده
 // ═════════════════════════════════════════════════════════════
 
-// GET /api/admin/reviews/?filter=new|checked|hidden|all&search=&page=
-//   queryset پایه: Review.objects.exclude(text="")   ← فقط نظرهای متن‌دار
-//   ترتیب: -submitted_at  (submitted_at با هر ویرایش نویسنده به‌روز می‌شود)
-//   «جدید» = checked=False و status=visible
-async function fetchReviews({ filter, search }) {
-  await wait(450);
-  const q = search.trim();
-  const rows = MOCK_REVIEWS.filter((r) =>
-    filter === "new" ? !r.checked && r.status === "visible" : filter === "checked" ? r.checked && r.status === "visible" : filter === "hidden" ? r.status === "hidden" : true
-  )
-    .filter((r) => !q || r.text.includes(q) || r.book.title.includes(q) || r.author.display_name.includes(q))
-    .sort((a, b) => b.submitted_at.localeCompare(a.submitted_at));
-  return { results: clone(rows), new_count: MOCK_REVIEWS.filter((r) => !r.checked && r.status === "visible").length };
-}
-
-// POST /api/admin/reviews/<id>/check/
-async function checkReview(id) {
-  await wait(250);
-  MOCK_REVIEWS.find((r) => r.id === id).checked = true;
-}
-
-// POST /api/admin/reviews/<id>/hide/   { reason }
-// نظر از صفحهٔ کتاب برداشته می‌شود و از میانگین امتیاز هم بیرون می‌رود.
-// TODO(اعلان): اعلان «نظر شما پنهان شد» همراه دلیل، برای نویسنده
-//   (خواستهٔ صریح؛ فراموش نشود)
-async function hideReview(id, reason) {
-  await wait(500);
-  if (!reason.trim()) throw httpError(400, { reason: ["دلیل لازم است."] });
-  Object.assign(MOCK_REVIEWS.find((r) => r.id === id), { status: "hidden", checked: true, hidden_reason: reason.trim() });
-}
-
-// POST /api/admin/reviews/<id>/unhide/
-// ⚠️ این امکان در تصمیم‌ها نبود؛ برای جبران پنهان‌سازی اشتباه اضافه شده.
-// اگر نمی‌خواهید، این تابع و دکمه‌اش را حذف کنید.
-async function unhideReview(id) {
-  await wait(400);
-  Object.assign(MOCK_REVIEWS.find((r) => r.id === id), { status: "visible", hidden_reason: "" });
+// نظر در فیلتر فعلی می‌ماند؟ (بعد از هر کار، بدون صبر برای درخواست دوباره)
+function inFilter(r, filter) {
+  if (filter === "new") return !r.is_checked && !r.is_hidden;
+  if (filter === "checked") return r.is_checked && !r.is_hidden;
+  if (filter === "hidden") return r.is_hidden;
+  return true;
 }
 
 // ═════════════════════════════════════════════════════════════
@@ -102,7 +64,7 @@ export default function AdminReviewsPage() {
   useEffect(() => {
     let cancelled = false;
     setState((s) => (s === "ready" ? "ready" : "loading"));
-    fetchReviews({ filter, search })
+    getAdminReviews({ filter, search })
       .then((data) => {
         if (cancelled) return;
         setReviews(data.results);
@@ -117,15 +79,10 @@ export default function AdminReviewsPage() {
 
   // بعد از هر کار، اگر نظر از فیلتر فعلی بیرون رفت، همان لحظه از لیست برداشته
   // می‌شود (بدون صبر برای درخواست دوباره) و عدد منو به‌روز می‌شود
-  function afterAction(id, patch) {
-    setReviews((list) =>
-      list
-        .map((r) => (r.id === id ? { ...r, ...patch } : r))
-        .filter((r) =>
-          filter === "new" ? !r.checked && r.status === "visible" : filter === "checked" ? r.checked && r.status === "visible" : filter === "hidden" ? r.status === "hidden" : true
-        )
-    );
-    if (patch.checked && filter === "new") setNewCount((n) => Math.max(0, (n ?? 1) - 1));
+  function afterAction(updated) {
+    const wasNew = reviews.some((r) => r.id === updated.id && !r.is_checked && !r.is_hidden);
+    setReviews((list) => list.map((r) => (r.id === updated.id ? updated : r)).filter((r) => inFilter(r, filter)));
+    if (wasNew && (updated.is_checked || updated.is_hidden)) setNewCount((n) => Math.max(0, (n ?? 1) - 1));
     notifyCountsChanged();
   }
 
@@ -183,31 +140,32 @@ function ReviewCard({ review: r, onDone, showToast }) {
   const [busy, setBusy] = useState(false);
   const ref = useRef(null);
 
-  async function run(fn, patch, message) {
+  async function run(fn, message) {
     setBusy(true);
     try {
-      await fn();
+      const updated = await fn();
       // فوکوس به کارت بعدی می‌رود تا با صفحه‌کلید پشت سر هم کار شود
       const next = ref.current?.nextElementSibling?.querySelector("[data-card]");
-      onDone(r.id, patch);
+      setHiding(false);
+      onDone(updated);
       showToast(message);
       next?.focus();
     } catch (err) {
       if (err.response?.status === 400) setError(err.response.data.reason?.[0]);
-      else showToast("انجام نشد.", "red");
+      else showToast(errorMessage(err), "red");
     } finally {
       setBusy(false);
     }
   }
 
-  const check = () => run(() => checkReview(r.id), { checked: true }, "بررسی شد.");
+  const check = () => run(() => checkReview(r.id), "بررسی شد.");
   const hide = () => {
     if (!reason.trim()) return setError("دلیل را بنویسید.");
-    run(() => hideReview(r.id, reason), { status: "hidden", checked: true, hidden_reason: reason.trim() }, "نظر پنهان شد.");
+    run(() => hideReview(r.id, reason.trim()), "نظر پنهان شد.");
   };
-  const unhide = () => run(() => unhideReview(r.id), { status: "visible", hidden_reason: "" }, "نظر دوباره نمایش داده می‌شود.");
+  const unhide = () => run(() => unhideReview(r.id), "نظر دوباره نمایش داده می‌شود.");
 
-  const isNew = !r.checked && r.status === "visible";
+  const isNew = !r.is_checked && !r.is_hidden;
 
   return (
     <li ref={ref}>
@@ -220,27 +178,36 @@ function ReviewCard({ review: r, onDone, showToast }) {
         }}
         className={`rounded-2xl border bg-white p-4 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600/50 ${
           isNew ? "border-blue-200" : "border-gray-200"
-        } ${r.status === "hidden" ? "opacity-80" : ""}`}
+        } ${r.is_hidden ? "opacity-80" : ""}`}
       >
         <header className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
             <Stars n={r.rating} />
-            <span className="text-sm font-semibold text-gray-900">{r.author.display_name}</span>
+            <Link to={`/admin/users?user=${r.author.id}`} className="text-sm font-semibold text-gray-900 hover:text-blue-700" title={r.author.full_name}>
+              {r.author.display_name}
+            </Link>
             <span className="text-xs text-gray-400">دربارهٔ</span>
-            <a href={`/books/${r.book.id}`} className="truncate text-sm text-blue-700 hover:underline">{r.book.title}</a>
+            {/* کتابی که دیگر در فروشگاه نیست صفحهٔ عمومی ندارد؛ آن را در بررسی کتاب‌ها باز کن */}
+            <Link
+              to={r.book.status === "approved" ? `/books/${r.book.id}#reviews` : `/admin/books?status=all&book=${r.book.id}`}
+              className="truncate text-sm text-blue-700 hover:underline"
+            >
+              {r.book.title}
+            </Link>
           </div>
           <div className="flex items-center gap-1.5">
             {isNew && <Badge tone="blue">جدید</Badge>}
-            {r.edited && <Badge tone="gray">ویرایش‌شده</Badge>}
-            {r.status === "hidden" && <Badge tone="red">پنهان</Badge>}
+            {r.is_edited && <Badge tone="gray">ویرایش‌شده</Badge>}
+            {r.is_hidden && <Badge tone="red">پنهان</Badge>}
+            {!r.is_hidden && r.previously_hidden && <Badge tone="amber">قبلاً پنهان‌شده</Badge>}
             <span className="text-[11px] text-gray-400" title={formatDateTime(r.submitted_at)}>{timeAgo(r.submitted_at)}</span>
           </div>
         </header>
 
-        <p dir="auto" className="mt-3 whitespace-pre-wrap text-sm leading-7 text-gray-800">{r.text}</p>
+        <p dir="auto" className="mt-3 whitespace-pre-wrap text-sm leading-7 text-gray-800">{r.body}</p>
 
-        {r.status === "hidden" && (
-          <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">دلیل پنهان شدن: {r.hidden_reason}</p>
+        {r.is_hidden && (
+          <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">دلیل پنهان شدن: {r.hide_reason}</p>
         )}
 
         {hiding ? (
@@ -261,7 +228,7 @@ function ReviewCard({ review: r, onDone, showToast }) {
           </div>
         ) : (
           <footer className="mt-3 flex justify-end gap-2">
-            {r.status === "visible" ? (
+            {!r.is_hidden ? (
               <>
                 <button type="button" onClick={() => setHiding(true)} className="h-9 rounded-lg px-3 text-sm font-semibold text-red-600 hover:bg-red-50">پنهان کردن…</button>
                 {isNew && (

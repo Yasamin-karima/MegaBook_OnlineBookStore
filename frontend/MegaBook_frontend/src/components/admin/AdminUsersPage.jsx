@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { getAdminUser, getAdminUsers } from "../../api/admin";
 import AdminShell from "./AdminShell";
 import {
   Badge, EmptyDetail, QueueLayout, QueueSkeleton, SearchBox,
-  clone, formatDate, formatDateTime, httpError, toFaNumber, toLatinDigits, useDebounced, useUrlParam, wait,
+  formatDate, formatDateTime, toFaNumber, toLatinDigits, useDebounced, useUrlParam,
 } from "./adminUtils";
 
 // ═════════════════════════════════════════════════════════════
@@ -14,47 +16,15 @@ import {
 // یک‌جا می‌بیند. هر مورد به بخش مربوطش در داشبورد لینک می‌شود.
 //
 // ⚠️ این صفحه ایمیل، موبایل و تراکنش‌های همهٔ کاربران را نشان می‌دهد؛ endpoint
-// آن حتماً فقط برای is_staff باشد (برای بقیه 404). فهرست عمومی کاربران قبلاً
-// به همین دلیل حذف شد (۲.۹).
+// آن فقط برای is_staff است (برای بقیه 404). فهرست عمومی کاربران قبلاً به همین
+// دلیل حذف شد (۲.۹). همهٔ عددها (موجودی، تعدادها) در سرور حساب می‌شوند، نه ذخیره.
 // ═════════════════════════════════════════════════════════════
-
-// ═════════════════════════════════════════════════════════════
-// داده ماک (Mock)
-// ═════════════════════════════════════════════════════════════
-const HOUR = 60 * 60 * 1000;
-const t = (h) => new Date(Date.now() - h * HOUR).toISOString();
-
-const MOCK_USERS = [
-  { id: 3, first_name: "یاسمین", last_name: "کریمی", email: "yasamin@example.com", phone: "09121234567", is_staff: false, is_active: true, date_joined: t(900), balance: 65000 },
-  { id: 8, first_name: "رضا", last_name: "محمدی", email: "reza@example.com", phone: "", is_staff: false, is_active: true, date_joined: t(700), balance: 310000 },
-  { id: 9, first_name: "مریم", last_name: "احمدی", email: "", phone: "09351112233", is_staff: false, is_active: true, date_joined: t(300), balance: 0 },
-  { id: 1, first_name: "سارا", last_name: "رحیمی", email: "sara@megabook.ir", phone: "", is_staff: true, is_active: true, date_joined: t(2000), balance: 0 },
-  { id: 11, first_name: "نیما", last_name: "صادقی", email: "nima@example.com", phone: "09199998877", is_staff: false, is_active: true, date_joined: t(100), balance: 128000 },
-];
-
-const MOCK_DETAILS = {
-  3: {
-    ledger: [
-      { id: 1, type: "purchase", amount: -185000, description: "سفارش ۵۰۱", created_at: t(60) },
-      { id: 2, type: "sale_income", amount: 60000, description: "فروش «یادداشت‌های من»", created_at: t(70) },
-      { id: 3, type: "adjustment", amount: 15000, description: "جبران خطای قیمت در سفارش ۵۰۱ (سارا)", created_at: t(200) },
-      { id: 4, type: "withdrawal", amount: -310000, description: "برداشت به کارت …6789", created_at: t(300) },
-      { id: 5, type: "topup", amount: 100000, description: "کارت‌به‌کارت، پیگیری 998877665", created_at: t(80) },
-    ],
-    purchases: [{ id: 12, title: "کتابخانه نیمه‌شب", purchased_at: t(60) }, { id: 30, title: "دیوان حافظ", purchased_at: t(60) }],
-    uploads: [
-      { id: 42, title: "یادداشت‌های من", status: "approved" },
-      { id: 50, title: "مبانی شبکه‌های پیچیده", status: "pending" },
-      { id: 51, title: "جزوهٔ جبر خطی", status: "rejected" },
-    ],
-    requests: [{ request_id: 21, entry_id: 701, title: "Beyond Good and Evil", status: "open" }],
-  },
-};
 
 const LEDGER_LABEL = {
   topup: "شارژ",
   purchase: "خرید",
   sale_income: "سهم فروش",
+  commission: "کمیسیون",
   withdrawal: "برداشت",
   withdrawal_reversal: "برگشت برداشت",
   adjustment: "اصلاح دستی",
@@ -63,30 +33,12 @@ const BOOK_STATUS = { pending: ["در انتظار", "amber"], approved: ["در 
 const REQUEST_STATUS = { open: ["در انتظار تأمین", "amber"], fulfilled: ["تأمین‌شده", "green"], rejected: ["ردشده", "red"] };
 
 // ═════════════════════════════════════════════════════════════
-// 🔌 اتصال به بکند (فقط is_staff). آدرس‌ها پیشنهادی‌اند.
+// اتصال به بکند (api/admin.js؛ فقط is_staff، فقط خواندنی)
+//
+// GET /admin-api/users/?search=   ← جستجو روی نام، ایمیل و موبایل (موبایل هر شکلی که
+//     ورود می‌پذیرد، نرمال‌شده). موجودی با Subquery در همان کوئری.
+// GET /admin-api/users/<id>/      ← کاربر + ۲۰ تراکنش آخر + خریدها، بارگذاری‌ها و درخواست‌ها
 // ═════════════════════════════════════════════════════════════
-
-// GET /api/admin/users/?search=&page=
-//   جستجو روی نام، نام خانوادگی، ایمیل و موبایل (موبایل نرمال‌شده، مثل ورود)
-//   balance با annotate(Sum("wallet__entries__amount"))، نه کوئری جدا برای هر کاربر
-async function fetchUsers(search) {
-  await wait(400);
-  const q = search.trim();
-  return clone(
-    MOCK_USERS.filter((u) => !q || `${u.first_name} ${u.last_name}`.includes(q) || u.email.includes(q) || u.phone.includes(q)).sort((a, b) =>
-      b.date_joined.localeCompare(a.date_joined)
-    )
-  );
-}
-
-// GET /api/admin/users/<id>/
-//   ledger: ۲۰ تراکنش آخر (برای همه: GET /api/admin/users/<id>/ledger/?page=)
-async function fetchUser(id) {
-  await wait(400);
-  const u = MOCK_USERS.find((x) => x.id === id);
-  if (!u) throw httpError(404);
-  return clone({ ...u, ...(MOCK_DETAILS[id] ?? { ledger: [], purchases: [], uploads: [], requests: [] }) });
-}
 
 // ═════════════════════════════════════════════════════════════
 // کامپوننت صفحه
@@ -103,8 +55,8 @@ export default function AdminUsersPage() {
   useEffect(() => {
     let cancelled = false;
     setListState("loading");
-    fetchUsers(search)
-      .then((r) => !cancelled && (setUsers(r), setListState("ready")))
+    getAdminUsers({ search })
+      .then((r) => !cancelled && (setUsers(r.results), setListState("ready")))
       .catch(() => !cancelled && setListState("error"));
     return () => {
       cancelled = true;
@@ -112,10 +64,13 @@ export default function AdminUsersPage() {
   }, [search]);
 
   useEffect(() => {
-    if (!selectedId) return setDetailState("idle");
+    if (!selectedId) {
+      setDetailState("idle");
+      return;
+    }
     let cancelled = false;
     setDetailState("loading");
-    fetchUser(selectedId)
+    getAdminUser(selectedId)
       .then((u) => !cancelled && (setUser(u), setDetailState("ready")))
       .catch((err) => !cancelled && setDetailState(err.response?.status === 404 ? "notfound" : "error"));
     return () => {
@@ -193,7 +148,7 @@ export default function AdminUsersPage() {
               <p className="mt-1 text-2xl font-bold text-blue-700">{toFaNumber(user.balance)}</p>
               <p className="text-xs text-blue-800">تومان</p>
               {/* اصلاح موجودی فقط از بخش کیف پول، با توضیح اجباری */}
-              <a href="/admin/wallet?tab=adjust" className="mt-2 inline-block text-xs font-semibold text-blue-700 hover:underline">اصلاح دستی ←</a>
+              <Link to="/admin/wallet?tab=adjust" className="mt-2 inline-block text-xs font-semibold text-blue-700 hover:underline">اصلاح دستی ←</Link>
             </div>
           </section>
 
@@ -210,7 +165,8 @@ export default function AdminUsersPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {[...user.ledger].sort((a, b) => b.created_at.localeCompare(a.created_at)).map((l) => (
+                  {/* جدیدترین اول، از سرور */}
+                  {user.ledger.map((l) => (
                     <tr key={l.id}>
                       <td className="whitespace-nowrap px-4 py-2 text-gray-700">{LEDGER_LABEL[l.type] ?? l.type}</td>
                       <td className="px-4 py-2 text-gray-600">{l.description}</td>
@@ -228,7 +184,7 @@ export default function AdminUsersPage() {
               <ul className="divide-y divide-gray-100">
                 {user.purchases.map((p) => (
                   <li key={p.id} className="flex justify-between gap-2 px-4 py-2 text-sm">
-                    <a href={`/books/${p.id}`} className="truncate text-gray-900 hover:text-blue-700">{p.title}</a>
+                    <Link to={`/books/${p.id}`} className="truncate text-gray-900 hover:text-blue-700">{p.title}</Link>
                     <span className="shrink-0 text-xs text-gray-500">{formatDate(p.purchased_at)}</span>
                   </li>
                 ))}
@@ -239,7 +195,7 @@ export default function AdminUsersPage() {
               <ul className="divide-y divide-gray-100">
                 {user.uploads.map((b) => (
                   <li key={b.id} className="flex items-center justify-between gap-2 px-4 py-2 text-sm">
-                    <a href={`/admin/books?status=all&book=${b.id}`} className="truncate text-gray-900 hover:text-blue-700">{b.title}</a>
+                    <Link to={`/admin/books?status=all&book=${b.id}`} className="truncate text-gray-900 hover:text-blue-700">{b.title}</Link>
                     <Badge tone={BOOK_STATUS[b.status][1]}>{BOOK_STATUS[b.status][0]}</Badge>
                   </li>
                 ))}
@@ -250,7 +206,7 @@ export default function AdminUsersPage() {
               <ul className="divide-y divide-gray-100">
                 {user.requests.map((r) => (
                   <li key={r.entry_id} className="flex items-center justify-between gap-2 px-4 py-2 text-sm">
-                    <a href={`/admin/requests?filter=all&request=${r.request_id}&entry=${r.entry_id}`} dir="auto" className="truncate text-gray-900 hover:text-blue-700">{r.title}</a>
+                    <Link to={`/admin/requests?filter=all&request=${r.request_id}&entry=${r.entry_id}`} dir="auto" className="truncate text-gray-900 hover:text-blue-700">{r.title}</Link>
                     <Badge tone={REQUEST_STATUS[r.status][1]}>{REQUEST_STATUS[r.status][0]}</Badge>
                   </li>
                 ))}

@@ -278,6 +278,16 @@ export default function AccountPage({ onBack }) {
                     <span aria-hidden="true">👛</span>
                     کیف پول
                 </Link>
+                {/* Only for staff; the dashboard itself is protected by the backend (404 for others) */}
+                {user?.is_staff && (
+                    <Link
+                        to="/admin"
+                        className="flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-gray-900 bg-gray-900 font-semibold text-white transition-colors hover:bg-gray-700 focus:outline-none focus-visible:ring-4 focus-visible:ring-blue-600/20"
+                    >
+                        <span aria-hidden="true">🛠️</span>
+                        داشبورد مدیریت
+                    </Link>
+                )}
                 <button
                     type="button"
                     onClick={handleLogout}

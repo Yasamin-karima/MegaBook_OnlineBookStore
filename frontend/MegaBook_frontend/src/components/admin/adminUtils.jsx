@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 // ═════════════════════════════════════════════════════════════
 // ابزارهای مشترک صفحه‌های ادمین.
@@ -33,17 +34,33 @@ export function timeAgo(iso) {
   return rtf.format(Math.round(minutes / (60 * 24 * 30)), "month");
 }
 
-// ── شبیه‌سازی شبکه برای ماک‌ها ──
-export const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-export const clone = (x) => structuredClone(x);
-export function httpError(status, data) {
-  const e = new Error(`HTTP ${status}`);
-  e.response = { status, data };
-  return e;
-}
+// ── خطاهای سرور ──
 // خطای 400 DRF به شکل { field: ["پیام"] } را به { field: "پیام" } تبدیل می‌کند
 export const fieldErrors = (data = {}) =>
   Object.fromEntries(Object.entries(data).map(([k, v]) => [k, Array.isArray(v) ? v[0] : String(v)]));
+
+// پیام کوتاه یک خطای axios: پیام فارسی سرور اگر هست، وگرنه متن پیش‌فرض
+export function errorMessage(err, fallback = "انجام نشد. اتصال را بررسی کنید.") {
+  const data = err?.response?.data;
+  if (data?.detail) return data.detail;
+  const first = data && typeof data === "object" ? Object.values(data)[0] : null;
+  return Array.isArray(first) ? first[0] : fallback;
+}
+
+// فایل خصوصی (PDF کتاب، رسید) با لینک امضاشدهٔ کوتاه‌مدت. تب پیش از درخواست باز می‌شود،
+// چون مرورگر پنجره‌ای را که بعد از await باز شود pop-up حساب می‌کند و می‌بندد (۱۰.۸).
+export async function openSignedLink(getLink) {
+  const tab = window.open("about:blank", "_blank");
+  if (tab) tab.opener = null; // the file's page can't reach back into the dashboard
+  try {
+    const { url } = await getLink();
+    if (tab) tab.location.href = url;
+    else window.location.href = url;
+  } catch (err) {
+    tab?.close();
+    throw err;
+  }
+}
 
 // ── hookها ──
 
@@ -70,26 +87,24 @@ export function useToast() {
   return [toast, show];
 }
 
-// state هم‌گام با آدرس صفحه. مقدار اولیه از ?key= خوانده می‌شود و هر تغییر
-// با replaceState در آدرس نوشته می‌شود (بدون بارگذاری دوباره).
-// 🔌 با react-router می‌شود همین را با useSearchParams نوشت.
+// state هم‌گام با آدرس صفحه (?key=…)، با React Router. مقدار اولیه از آدرس خوانده می‌شود
+// و هر تغییر با replace در آدرس نوشته می‌شود (بدون بارگذاری دوباره و بدون رکورد تازه در تاریخچه).
+// پایهٔ هر تغییر آدرسِ همین لحظه است، تا دو تغییر پشت سر هم (مثلاً request و entry) همدیگر را پاک نکنند.
 export function useUrlParam(key, fallback, allowed) {
-  const [value, setValue] = useState(() => {
-    const v = new URLSearchParams(window.location.search).get(key);
-    if (v === null) return fallback;
-    if (allowed && !allowed.includes(v)) return fallback;
-    return typeof fallback === "number" || fallback === null ? Number(v) || fallback : v;
-  });
+  const [params, setParams] = useSearchParams();
+  const raw = params.get(key);
+  let value;
+  if (raw === null || (allowed && !allowed.includes(raw))) value = fallback;
+  else value = typeof fallback === "number" || fallback === null ? Number(raw) || fallback : raw;
+
   const update = useCallback(
     (next) => {
-      setValue(next);
       const p = new URLSearchParams(window.location.search);
-      if (next === null || next === fallback) p.delete(key);
+      if (next === null || next === fallback || next === "") p.delete(key);
       else p.set(key, String(next));
-      const qs = p.toString();
-      window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+      setParams(p, { replace: true });
     },
-    [key, fallback]
+    [key, fallback, setParams]
   );
   return [value, update];
 }

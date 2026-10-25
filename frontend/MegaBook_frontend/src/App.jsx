@@ -23,6 +23,14 @@ import ConversationPage from './components/ConversationPage';
 import MyRequestsUploadsPage from './components/MyRequestsUploadsPage';
 import NotificationsPage from './components/NotificationsPage';
 import ProtectedRoute from './components/ProtectedRoute';
+import StaffRoute from './components/StaffRoute';
+import AdminHomePage from './components/admin/AdminHomePage';
+import AdminBookReviewPage from './components/admin/AdminBookReviewPage';
+import AdminRequestsPage from './components/admin/AdminRequestsPage';
+import AdminConversationsPage from './components/admin/AdminConversationsPage';
+import AdminWalletPage from './components/admin/AdminWalletPage';
+import AdminReviewsPage from './components/admin/AdminReviewsPage';
+import AdminUsersPage from './components/admin/AdminUsersPage';
 import useGoBack from './hooks/useGoBack';
 
 // Every page except login/sign-up and the reader: on desktop (md+) a side nav on the right,
@@ -104,6 +112,17 @@ const App = () => {
           </ProtectedRoute>
         }
       />
+      {/* The admin dashboard: staff only (StaffRoute), with its own side menu (AdminShell)
+          instead of the site's. The backend answers 404 to anyone else either way. */}
+      <Route path="/admin" element={<StaffRoute><Outlet /></StaffRoute>}>
+        <Route index element={<AdminHomePage />} />
+        <Route path="books" element={<AdminBookReviewPage />} />
+        <Route path="requests" element={<AdminRequestsPage />} />
+        <Route path="conversations" element={<AdminConversationsPage />} />
+        <Route path="wallet" element={<AdminWalletPage />} />
+        <Route path="reviews" element={<AdminReviewsPage />} />
+        <Route path="users" element={<AdminUsersPage />} />
+      </Route>
       {/* Pages with the desktop side nav (AppLayout); the routes themselves are unchanged */}
       <Route element={<AppLayout />}>
         <Route path="/" element={<Home />} />

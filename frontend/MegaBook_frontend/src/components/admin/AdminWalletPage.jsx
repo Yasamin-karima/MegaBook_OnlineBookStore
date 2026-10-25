@@ -1,9 +1,15 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import {
+  approveTopup, completeWithdrawal, createAdjustment, getAdjustments, getAdminUsers, getTopups, getWithdrawals,
+  rejectTopup, rejectWithdrawal,
+} from "../../api/admin";
+import { getReceiptLink } from "../../api/wallet";
 import AdminShell from "./AdminShell";
 import {
   Badge, ConfirmDialog, EmptyDetail, FilterChips, QueueLayout, QueueSkeleton, ReasonField, SearchBox, Toast,
-  clone, displayCard, formatDateTime, httpError, notifyCountsChanged, timeAgo, toFaNumber, toLatinDigits,
-  useDebounced, useToast, useUrlParam, wait,
+  displayCard, errorMessage, formatDateTime, notifyCountsChanged, openSignedLink, timeAgo, toFaNumber, toLatinDigits,
+  useDebounced, useToast, useUrlParam,
 } from "./adminUtils";
 
 // ═════════════════════════════════════════════════════════════
@@ -11,7 +17,7 @@ import {
 //
 // سه تب:
 //   شارژهای کارت‌به‌کارت ← TopUpRequest: تأیید (واریز به کیف پول) یا رد با دلیل
-//   برداشت‌ها             ← WithdrawalRequest: «پرداخت شد» یا رد با دلیل (برگشت پول)
+//   برداشت‌ها             ← WithdrawalRequest: «پرداخت شد» (completed) یا رد با دلیل (برگشت پول)
 //   اصلاح دستی            ← services.adjust: مثبت یا منفی، با توضیح اجباری
 //
 // قاعده‌های اصلی (تصمیم‌های ۶.۹ تا ۶.۱۱):
@@ -22,36 +28,6 @@ import {
 //   • فرانت هیچ عددی را حساب و ذخیره نمی‌کند؛ همهٔ جابه‌جایی‌ها فقط از
 //     wallet/services.py در بکند انجام می‌شوند (۶.۷).
 // ═════════════════════════════════════════════════════════════
-
-// ═════════════════════════════════════════════════════════════
-// داده ماک (Mock)
-// ═════════════════════════════════════════════════════════════
-const HOUR = 60 * 60 * 1000;
-const t = (h) => new Date(Date.now() - h * HOUR).toISOString();
-
-const MOCK_USERS = [
-  { id: 3, full_name: "یاسمین کریمی", email: "yasamin@example.com", phone: "09121234567", balance: 65000 },
-  { id: 8, full_name: "رضا محمدی", email: "reza@example.com", phone: "", balance: 310000 },
-  { id: 9, full_name: "مریم احمدی", email: "", phone: "09351112233", balance: 0 },
-  { id: 11, full_name: "نیما صادقی", email: "nima@example.com", phone: "09199998877", balance: 128000 },
-];
-const userById = (id) => MOCK_USERS.find((u) => u.id === id);
-
-let MOCK_TOPUPS = [
-  { id: 31, user_id: 11, amount: 200000, tracking_code: "784512369", paid_at: t(5), has_receipt: true, status: "pending", rejection_reason: "", created_at: t(4.8), reviewed_by: null },
-  { id: 30, user_id: 9, amount: 50000, tracking_code: "112233445", paid_at: t(26), has_receipt: false, status: "pending", rejection_reason: "", created_at: t(25), reviewed_by: null },
-  { id: 29, user_id: 3, amount: 100000, tracking_code: "998877665", paid_at: t(80), has_receipt: true, status: "approved", rejection_reason: "", created_at: t(79), reviewed_by: "سارا" },
-  { id: 28, user_id: 8, amount: 300000, tracking_code: "556677889", paid_at: t(120), has_receipt: true, status: "rejected", rejection_reason: "این مبلغ در صورت‌حساب بانک پیدا نشد.", created_at: t(119), reviewed_by: "سارا" },
-];
-
-let MOCK_WITHDRAWALS = [
-  { id: 12, user_id: 8, amount: 250000, card_number: "6037991123456789", status: "pending", rejection_reason: "", created_at: t(18), reviewed_by: null },
-  { id: 11, user_id: 3, amount: 310000, card_number: "6219861034567890", status: "paid", rejection_reason: "", created_at: t(300), reviewed_by: "سارا" },
-];
-
-let MOCK_ADJUSTMENTS = [
-  { id: 4, user_id: 3, amount: 15000, description: "جبران خطای قیمت کتاب «یادداشت‌های من» در سفارش ۵۰۱.", created_at: t(200), created_by: "سارا" },
-];
 
 const TABS = [
   { key: "topups", label: "شارژ کارت‌به‌کارت" },
@@ -67,109 +43,39 @@ const TOPUP_FILTERS = [
 ];
 const WITHDRAW_FILTERS = [
   { key: "pending", label: "در انتظار" },
-  { key: "paid", label: "پرداخت‌شده" },
+  { key: "completed", label: "پرداخت‌شده" },
   { key: "rejected", label: "ردشده" },
   { key: "all", label: "همه" },
 ];
 const STATUS_BADGE = {
   pending: { label: "در انتظار", tone: "amber" },
   approved: { label: "تأییدشده", tone: "green" },
-  paid: { label: "پرداخت‌شده", tone: "green" },
+  completed: { label: "پرداخت‌شده", tone: "green" },
   rejected: { label: "ردشده", tone: "red" },
 };
 
 // ═════════════════════════════════════════════════════════════
-// 🔌 اتصال به بکند (فقط is_staff). آدرس‌ها پیشنهادی‌اند.
+// اتصال به بکند (api/admin.js؛ فقط is_staff، بدون نقش مالی جدا)
+//
+// GET  /admin-api/wallet/topups/?status=&search=       ← صف + pending { topups, withdrawals }
+// GET  /admin-api/wallet/withdrawals/?status=&search=
+//      «در انتظار» از قدیمی به جدید (صف)، بقیه از جدید به قدیمی. موجودی کاربر در هر ردیف.
+// POST …/topups/<id>/approve/ | reject/ {reason}
+// POST …/withdrawals/<id>/complete/ | reject/ {reason}
+//      سرور ردیف را قفل می‌کند، دوباره بررسی می‌کند هنوز «در انتظار» است و فقط یک بار
+//      واریز می‌کند. اگر ادمین دیگری همین لحظه آن را بررسی کرده باشد → 409.
+//      رد برداشت تراکنش برگشت می‌سازد. اعلان کاربر را سرور می‌سازد (wallet.services).
+// GET/POST /admin-api/wallet/adjustments/  { user_id, amount (علامت‌دار), description }
+//      services.adjust: توضیح اجباری، ادمین ثبت می‌شود، موجودی منفی نمی‌شود → 400.
 // ═════════════════════════════════════════════════════════════
 
-const withUser = (row) => ({ ...clone(row), user: clone(userById(row.user_id)) });
-const matches = (row, q) => {
-  const u = userById(row.user_id);
-  return !q || u.full_name.includes(q) || u.email.includes(q) || u.phone.includes(q) || (row.tracking_code ?? "").includes(q);
-};
-
-// GET /api/admin/wallet/topup-requests/?status=&search=
-// GET /api/admin/wallet/withdrawals/?status=&search=
-// «در انتظار» از قدیمی به جدید (صف)، بقیه از جدید به قدیمی.
-async function fetchList(kind, { status, search }) {
-  await wait(400);
-  const source = kind === "topups" ? MOCK_TOPUPS : MOCK_WITHDRAWALS;
-  const rows = source
-    .filter((r) => status === "all" || r.status === status)
-    .filter((r) => matches(r, search))
-    .sort((a, b) => (status === "pending" ? a.created_at.localeCompare(b.created_at) : b.created_at.localeCompare(a.created_at)));
-  return {
-    results: rows.map(withUser),
-    pending: { topups: MOCK_TOPUPS.filter((r) => r.status === "pending").length, withdrawals: MOCK_WITHDRAWALS.filter((r) => r.status === "pending").length },
-  };
+function fetchList(kind, params) {
+  return kind === "topups" ? getTopups(params) : getWithdrawals(params);
 }
 
-// POST /api/admin/wallet/topup-requests/<id>/approve/
-// POST /api/admin/wallet/topup-requests/<id>/reject/   { reason }
-// سرور: ردیف را قفل می‌کند، دوباره بررسی می‌کند هنوز «در انتظار» است، و فقط
-// یک بار واریز می‌کند (UniqueConstraint روی LedgerEntry.topup_request). اگر
-// ادمین دیگری همین لحظه آن را بررسی کرده باشد → 409.
-// TODO(اعلان): اعلان «شارژ تأیید/رد شد» برای کاربر
-async function decideTopup(id, action, reason) {
-  await wait(700);
-  const r = MOCK_TOPUPS.find((x) => x.id === id);
-  if (r.status !== "pending") throw httpError(409);
-  if (action === "reject" && !reason.trim()) throw httpError(400, { reason: ["دلیل رد لازم است."] });
-  r.status = action === "approve" ? "approved" : "rejected";
-  r.rejection_reason = action === "reject" ? reason.trim() : "";
-  r.reviewed_by = "شما";
-  if (action === "approve") userById(r.user_id).balance += r.amount;
-  return withUser(r);
-}
-
-// GET /wallet/topup-requests/<id>/receipt-link/  ← لینک امضاشدهٔ ۵ دقیقه‌ای (۳.۱۵)
-async function openReceipt(id) {
-  await wait(300);
-  console.log("open receipt (mock):", id);
-  // const res = await axios.get(`/wallet/topup-requests/${id}/receipt-link/`);
-  // window.open(res.data.url, "_blank", "noopener");
-}
-
-// POST /api/admin/wallet/withdrawals/<id>/mark-paid/
-// POST /api/admin/wallet/withdrawals/<id>/reject/   { reason }
-// «پرداخت شد» چیزی به دفتر اضافه نمی‌کند (پول هنگام درخواست کم شده بود).
-// «رد» یک تراکنش withdrawal_reversal می‌سازد و پول به کیف پول برمی‌گردد.
-// TODO(اعلان): اعلان «برداشت پرداخت/رد شد» برای کاربر
-async function decideWithdrawal(id, action, reason) {
-  await wait(700);
-  const r = MOCK_WITHDRAWALS.find((x) => x.id === id);
-  if (r.status !== "pending") throw httpError(409);
-  if (action === "reject" && !reason.trim()) throw httpError(400, { reason: ["دلیل رد لازم است."] });
-  r.status = action === "paid" ? "paid" : "rejected";
-  r.rejection_reason = action === "reject" ? reason.trim() : "";
-  r.reviewed_by = "شما";
-  if (action === "reject") userById(r.user_id).balance += r.amount;
-  return withUser(r);
-}
-
-// GET /api/admin/users/?search=  (همان endpoint بخش کاربران) ← انتخاب کاربر برای اصلاح
-async function searchUsers(q) {
-  await wait(300);
-  if (!q.trim()) return [];
-  return clone(MOCK_USERS.filter((u) => u.full_name.includes(q) || u.email.includes(q) || u.phone.includes(q)));
-}
-
-// GET  /api/admin/wallet/adjustments/
-// POST /api/admin/wallet/adjustments/   { user_id, amount (علامت‌دار), description }
-// سرور services.adjust را صدا می‌زند: توضیح اجباری، ادمین انجام‌دهنده ثبت
-// می‌شود، و اصلاح منفی نمی‌تواند موجودی را منفی کند (۶.۱۱) → 400.
-async function fetchAdjustments() {
-  await wait(300);
-  return [...MOCK_ADJUSTMENTS].sort((a, b) => b.created_at.localeCompare(a.created_at)).map(withUser);
-}
-async function createAdjustment({ user_id, amount, description }) {
-  await wait(700);
-  const u = userById(user_id);
-  if (u.balance + amount < 0) throw httpError(400, { amount: ["موجودی کاربر منفی می‌شود."] });
-  u.balance += amount;
-  const row = { id: Date.now(), user_id, amount, description, created_at: new Date().toISOString(), created_by: "شما" };
-  MOCK_ADJUSTMENTS.push(row);
-  return withUser(row);
+async function decide(kind, id, action, reason) {
+  if (kind === "topups") return action === "approve" ? approveTopup(id) : rejectTopup(id, reason);
+  return action === "paid" ? completeWithdrawal(id) : rejectWithdrawal(id, reason);
 }
 
 // ═════════════════════════════════════════════════════════════
@@ -273,9 +179,7 @@ function RequestsTab({ kind, onPending, showToast }) {
     }
     setBusy(true);
     try {
-      const updated = isTopup
-        ? await decideTopup(selected.id, dialog.action, reason)
-        : await decideWithdrawal(selected.id, dialog.action, reason);
+      const updated = await decide(kind, selected.id, dialog.action, reason);
       setSelected(updated);
       setDialog(null);
       setReload((k) => k + 1);
@@ -293,7 +197,7 @@ function RequestsTab({ kind, onPending, showToast }) {
         setReload((k) => k + 1);
       } else if (err.response?.status === 400) {
         setReasonError(err.response.data.reason?.[0] ?? "اطلاعات نامعتبر است.");
-      } else showToast("انجام نشد. اتصال را بررسی کنید.", "red");
+      } else showToast(errorMessage(err), "red");
     } finally {
       setBusy(false);
     }
@@ -365,21 +269,20 @@ function RequestsTab({ kind, onPending, showToast }) {
           <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 border-t border-gray-100 pt-4 text-sm">
             <dt className="text-gray-500">کاربر</dt>
             <dd className="font-semibold text-gray-900">
-              {/* 🔌 لینک به صفحهٔ همین کاربر در بخش کاربران */}
-              <a href={`/admin/users?user=${selected.user.id}`} className="hover:text-blue-700 hover:underline">{selected.user.full_name}</a>
+              <Link to={`/admin/users?user=${selected.user.id}`} className="hover:text-blue-700 hover:underline">{selected.user.full_name}</Link>
             </dd>
             <dt className="text-gray-500">موجودی فعلی</dt>
             <dd className="text-gray-900">{toFaNumber(selected.user.balance)} تومان</dd>
             {isTopup ? (
               <>
                 <dt className="text-gray-500">شمارهٔ پیگیری</dt>
-                <dd dir="ltr" className="text-right font-mono text-gray-900">{selected.tracking_code}</dd>
+                <dd dir="ltr" className="text-right font-mono text-gray-900">{selected.tracking_number}</dd>
                 <dt className="text-gray-500">زمان واریز</dt>
-                <dd className="text-gray-900">{formatDateTime(selected.paid_at)}</dd>
+                <dd className="text-gray-900">{formatDateTime(selected.deposited_at)}</dd>
                 <dt className="text-gray-500">رسید</dt>
                 <dd>
                   {selected.has_receipt ? (
-                    <button type="button" onClick={() => openReceipt(selected.id).catch(() => showToast("رسید باز نشد.", "red"))} className="font-semibold text-blue-600 hover:underline">
+                    <button type="button" onClick={() => openSignedLink(() => getReceiptLink(selected.id)).catch(() => showToast("رسید باز نشد.", "red"))} className="font-semibold text-blue-600 hover:underline">
                       مشاهدهٔ رسید
                     </button>
                   ) : (
@@ -408,7 +311,7 @@ function RequestsTab({ kind, onPending, showToast }) {
             {selected.status === "rejected" && (
               <>
                 <dt className="text-gray-500">دلیل رد</dt>
-                <dd className="text-red-700">{selected.rejection_reason}</dd>
+                <dd className="text-red-700">{isTopup ? selected.rejection_reason : selected.admin_note}</dd>
               </>
             )}
           </dl>
@@ -444,7 +347,7 @@ function RequestsTab({ kind, onPending, showToast }) {
       body: (
         <p>
           <b>{toFaNumber(selected.amount)} تومان</b> به کیف پول <b>{selected.user.full_name}</b> واریز می‌شود. پیش از تأیید، این مبلغ را با شمارهٔ پیگیری{" "}
-          <span dir="ltr" className="font-mono">{selected.tracking_code}</span> در صورت‌حساب بانک پیدا کرده باشید.
+          <span dir="ltr" className="font-mono">{selected.tracking_number}</span> در صورت‌حساب بانک پیدا کرده باشید.
         </p>
       ),
     },
@@ -508,12 +411,15 @@ function AdjustTab({ showToast }) {
   const [history, setHistory] = useState([]);
 
   useEffect(() => {
-    fetchAdjustments().then(setHistory).catch(() => {});
+    getAdjustments().then((data) => setHistory(data.results)).catch(() => {});
   }, []);
 
+  // همان جستجوی بخش کاربران (نام، ایمیل یا موبایل)
   useEffect(() => {
     let cancelled = false;
-    searchUsers(debounced).then((r) => !cancelled && setResults(r)).catch(() => {});
+    const q = toLatinDigits(debounced).trim();
+    if (!q) return;
+    getAdminUsers({ search: q }).then((r) => !cancelled && setResults(r.results.slice(0, 8))).catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -536,17 +442,20 @@ function AdjustTab({ showToast }) {
   async function submit() {
     setBusy(true);
     try {
-      const row = await createAdjustment({ user_id: user.id, amount: signed, description: description.trim() });
-      setHistory((h) => [row, ...h]);
-      setUser((u) => ({ ...u, balance: u.balance + signed }));
+      const { adjustment, balance } = await createAdjustment({ user_id: user.id, amount: signed, description: description.trim() });
+      setHistory((h) => [adjustment, ...h]);
+      // موجودی تازه از سرور، نه جمع زدن در فرانت
+      setUser((u) => ({ ...u, balance }));
       setAmount("");
       setDescription("");
       setConfirming(false);
       showToast("اصلاح ثبت شد.");
     } catch (err) {
       setConfirming(false);
-      if (err.response?.status === 400) setErrors({ amount: err.response.data.amount?.[0] });
-      else showToast("ثبت نشد.", "red");
+      const data = err.response?.data ?? {};
+      if (err.response?.status === 400)
+        setErrors({ amount: data.amount?.[0], description: data.description?.[0], user: data.user_id?.[0] });
+      else showToast(errorMessage(err, "ثبت نشد."), "red");
     } finally {
       setBusy(false);
     }
@@ -577,7 +486,7 @@ function AdjustTab({ showToast }) {
             ) : (
               <>
                 <SearchBox id="adjust-user" value={query} onChange={setQuery} placeholder="نام، ایمیل یا موبایل" />
-                {results.length > 0 && (
+                {query.trim() && results.length > 0 && (
                   <ul className="mt-1 divide-y divide-gray-100 rounded-xl border border-gray-200">
                     {results.map((u) => (
                       <li key={u.id}>
