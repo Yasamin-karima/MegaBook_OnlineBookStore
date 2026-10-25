@@ -25,6 +25,7 @@ export const ADMIN_NAV = [
   { key: "wallet", label: "کیف پول", icon: "👛", href: "/admin/wallet" },
   { key: "reviews", label: "نظرها", icon: "⭐", href: "/admin/reviews" },
   { key: "users", label: "کاربران", icon: "👥", href: "/admin/users" },
+  { key: "taxonomy", label: "دسته‌ها و برچسب‌ها", icon: "🏷️", href: "/admin/taxonomy" },
   // همان فرم بارگذاری کاربران؛ برای ادمین کتاب مستقیم تأیید می‌شود (تصمیم ۳.۱۲)
   { key: "add-book", label: "افزودن کتاب", icon: "＋", href: "/books/new" },
 ];

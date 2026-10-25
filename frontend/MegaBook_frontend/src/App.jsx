@@ -31,6 +31,7 @@ import AdminConversationsPage from './components/admin/AdminConversationsPage';
 import AdminWalletPage from './components/admin/AdminWalletPage';
 import AdminReviewsPage from './components/admin/AdminReviewsPage';
 import AdminUsersPage from './components/admin/AdminUsersPage';
+import AdminTaxonomyPage from './components/admin/AdminTaxonomyPage';
 import useGoBack from './hooks/useGoBack';
 
 // Every page except login/sign-up and the reader: on desktop (md+) a side nav on the right,
@@ -122,6 +123,7 @@ const App = () => {
         <Route path="wallet" element={<AdminWalletPage />} />
         <Route path="reviews" element={<AdminReviewsPage />} />
         <Route path="users" element={<AdminUsersPage />} />
+        <Route path="taxonomy" element={<AdminTaxonomyPage />} />
       </Route>
       {/* Pages with the desktop side nav (AppLayout); the routes themselves are unchanged */}
       <Route element={<AppLayout />}>
