@@ -1,7 +1,7 @@
 """/admin-api/: the React admin dashboard's API. Staff only; everyone else gets 404."""
 from django.urls import path
 
-from . import books, conversations, taxonomy
+from . import books, conversations, request_queue, taxonomy
 
 
 def conversation_urls(prefix, find_parent, name):
@@ -27,4 +27,9 @@ urlpatterns = [
     path("categories/<int:pk>/", taxonomy.TaxonomyItemView.as_view(**taxonomy.CATEGORY_VIEWS), name="admin_api_category"),
     path("tags/", taxonomy.TaxonomyListView.as_view(**taxonomy.TAG_VIEWS), name="admin_api_tags"),
     path("tags/<int:pk>/", taxonomy.TaxonomyItemView.as_view(**taxonomy.TAG_VIEWS), name="admin_api_tag"),
+    # Book requests
+    path("book-requests/", request_queue.RequestQueueView.as_view(), name="admin_api_requests"),
+    path("book-requests/<int:pk>/", request_queue.RequestDetailView.as_view(), name="admin_api_request"),
+    path("book-requests/<int:pk>/mark-reviewed/", request_queue.MarkReviewedView.as_view(), name="admin_api_request_reviewed"),
+    *conversation_urls("request-entries", conversations.find_entry, "entry"),
 ]
