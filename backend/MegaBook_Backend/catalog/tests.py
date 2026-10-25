@@ -18,7 +18,7 @@ from rest_framework.test import APITestCase
 
 from .book_sources import CoverDownloadError, download_cover
 from .isbn import ISBN_EMPTY, ISBN_FORMAT, InvalidISBN, normalize_isbn
-from .models import APPROVED_NEEDS_PRICE, PRICE_BELOW_SELLER_SHARE, Book, Category, Person, Publisher, Tag
+from .models import APPROVED_NEEDS_PRICE, PRICE_BELOW_SELLER_SHARE, REJECTION_REASON_REQUIRED, Book, Category, Person, Publisher, Tag
 from .serializers import ISBN_CHECKSUM, ISBN_IN_REVIEW, ISBN_LENGTH, ISBN_TAKEN
 
 # فایل‌های آپلودی تست در یک پوشه‌ی موقت ذخیره می‌شوند، نه در media/ واقعی
@@ -152,7 +152,7 @@ class BookCreateTests(APITestCase):
 
     def test_rejected_book_can_be_uploaded_again(self):
         self.post()
-        Book.objects.update(status=Book.Status.REJECTED)
+        Book.objects.update(status=Book.Status.REJECTED, rejection_reason="فایل ناقص")
         res = self.post(cover=png_file(), book_file=pdf_file(), seller_share="90000")
         self.assertEqual(res.status_code, status.HTTP_201_CREATED, res.data)
         # ردیف رد شده به‌عنوان سابقه می‌ماند؛ نسخه‌ی جدید در انتظار تایید است
@@ -231,6 +231,7 @@ class BookReadApiTests(APITestCase):
             isbn=f"978000000{self.counter:04d}",
             price=price,
             status=status,
+            rejection_reason="فایل ناقص" if status == Book.Status.REJECTED else "",
             category=category,
             uploaded_by=self.user,
             cover=png_file(f"c{self.counter}.png"),
@@ -542,6 +543,7 @@ class IsbnLookupTests(APITestCase):
         return Book.objects.create(
             title="x", isbn="9789643113445", price=0, status=book_status,
             uploaded_by=self.user, book_file="books/files/x.pdf",
+            rejection_reason="دلیل نمونه" if book_status == Book.Status.REJECTED else "",
         )
 
     @mock.patch(PATCH_TARGET)
@@ -822,7 +824,8 @@ class BookIsbnConstraintTests(TestCase):
     def book(self, book_status, **extra):
         return Book(
             title="x", isbn=VALID_ISBN, price=0, status=book_status,
-            uploaded_by=self.user, book_file="books/files/x.pdf", **extra,
+            uploaded_by=self.user, book_file="books/files/x.pdf",
+            rejection_reason="دلیل نمونه" if book_status == Book.Status.REJECTED else "", **extra,
         )
 
     def test_two_active_books_with_same_isbn_are_refused(self):
@@ -933,6 +936,43 @@ class BookMoneyRuleTests(TestCase):
 
 
 @override_settings(MEDIA_ROOT=TEMP_MEDIA)
+class BookRejectionReasonTests(TestCase):
+    """Rejected needs a reason; leaving rejected clears it (like BookRequest)."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            first_name="u", last_name="Test", email="u@example.com", password="Str0ng-Passw0rd!"
+        )
+        self.book = Book.objects.create(
+            title="x", isbn=VALID_ISBN, uploaded_by=self.user, book_file="books/files/x.pdf"
+        )
+
+    def test_rejecting_without_reason_fails(self):
+        self.book.status = Book.Status.REJECTED
+        self.book.rejection_reason = "   "
+        with self.assertRaises(ValidationError) as ctx:
+            self.book.save()
+        self.assertEqual(ctx.exception.message_dict["rejection_reason"], [REJECTION_REASON_REQUIRED])
+        self.book.refresh_from_db()
+        self.assertEqual(self.book.status, Book.Status.PENDING)
+
+    def test_reason_is_stored_and_cleared_when_leaving_rejected(self):
+        self.book.status, self.book.rejection_reason = Book.Status.REJECTED, "  فایل ناقص  "
+        self.book.save()
+        self.book.refresh_from_db()
+        self.assertEqual(self.book.rejection_reason, "فایل ناقص")
+        self.book.status = Book.Status.PENDING
+        self.book.save()
+        self.book.refresh_from_db()
+        self.assertEqual(self.book.rejection_reason, "")
+
+    def test_database_constraint(self):
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            Book.objects.filter(pk=self.book.pk).update(status=Book.Status.REJECTED)
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            Book.objects.filter(pk=self.book.pk).update(rejection_reason="دلیل")
+
+
 class BookUploadMoneyTests(APITestCase):
     """The upload form's money field: seller_share for regular users, price for admins."""
 

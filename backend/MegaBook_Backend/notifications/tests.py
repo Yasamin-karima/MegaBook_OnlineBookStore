@@ -126,13 +126,15 @@ class UploadTests(NotificationTestBase):
 
     def test_reject_links_to_the_upload_conversation(self):
         book = self.pending_book()
-        self.admin_change("catalog_book", book, status="rejected")
+        self.admin_change("catalog_book", book, status="rejected", rejection_reason="فایل ناقص است")
         n = of(self.uploader, Type.UPLOAD_REJECTED).get()
         self.client.force_authenticate(self.uploader)
         item = self.client.get(reverse("notifications")).data["results"][0]
         self.assertEqual(item["link"], {"kind": "app", "path": f"/uploads/{book.pk}"})
         self.assertIn(book.title, item["text"])
-        self.assertEqual(n.params, {"title": book.title})
+        # The reason travels with the notification and is shown in its text
+        self.assertEqual(n.params, {"title": book.title, "reason": "فایل ناقص است"})
+        self.assertIn("فایل ناقص است", item["text"])
 
 
 # ---------------------------------------------------------------------------
@@ -240,6 +242,7 @@ class ConversationTests(NotificationTestBase):
 
     def test_system_messages_are_not_support_replies(self):
         self.book.status = Book.Status.REJECTED
+        self.book.rejection_reason = "فایل ناقص"
         self.book.save()
         self.assertFalse(of(self.uploader, Type.SUPPORT_REPLY).exists())
         self.assertEqual(of(self.uploader, Type.UPLOAD_REJECTED).count(), 1)
@@ -341,6 +344,7 @@ class SaleTests(NotificationTestBase):
         try:
             with transaction.atomic():
                 book.status = Book.Status.REJECTED
+                book.rejection_reason = "فایل ناقص"
                 book.save()
                 self.assertTrue(of(self.uploader).exists())
                 raise RuntimeError("the admin action failed after the save")
@@ -440,6 +444,7 @@ class ApiTests(NotificationTestBase):
         book = BookFactory.make(self.uploader, price=None, book_status=Book.Status.PENDING)
         Notification.objects.all().delete()
         book.status = Book.Status.REJECTED
+        book.rejection_reason = "فایل ناقص"
         book.save()
         book.delete()  # a rejected upload with no sales may be deleted by an admin
         self.client.force_authenticate(self.uploader)

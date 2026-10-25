@@ -21,7 +21,7 @@ class BookAdmin(admin.ModelAdmin):
     filter_horizontal = ("authors", "translators", "tags")
     readonly_fields = ("commission_display", "conversation_link", "created_at", "updated_at")
     fieldsets = (
-        (None, {"fields": ("title", "original_title", "isbn", "status", "uploaded_by", "conversation_link")}),
+        (None, {"fields": ("title", "original_title", "isbn", "status", "rejection_reason", "uploaded_by", "conversation_link")}),
         # The money split the admin agrees on while approving. Commission is derived
         # (price - seller_share) and shows the saved values: it updates after saving.
         ("پول", {"fields": ("price", "seller_share", "commission_display")}),

@@ -28,6 +28,9 @@ class BookRequest(models.Model):
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.OPEN)
     # Sent to every requester in a system message when the request is rejected (support app)
     rejection_reason = models.TextField(blank=True, help_text="این متن عیناً برای کاربر ارسال می‌شود")
+    # When an admin last looked at it in the admin dashboard (a save, or "mark reviewed").
+    # Empty = "new": an open request nobody has reviewed yet. Kept if it reopens.
+    reviewed_at = models.DateTimeField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

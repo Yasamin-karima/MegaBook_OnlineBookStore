@@ -84,6 +84,38 @@ class Conversation(models.Model):
         return self.request_entry.requester if self.request_entry_id else self.book.uploaded_by
 
 
+class ConversationAdminAction(models.Model):
+    """One manual close or reopen by an admin, kept forever (admins only).
+
+    The conversation's own closed_* fields describe only its CURRENT state and are
+    cleared on reopen; this keeps who did what and when, across every close/reopen
+    cycle (like ReviewHide for reviews). Written only by support.services.
+    """
+
+    class Action(models.TextChoices):
+        CLOSE = "close", "بستن"
+        REOPEN = "reopen", "بازگشایی"
+
+    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name="admin_actions")
+    action = models.CharField(max_length=10, choices=Action.choices)
+    admin = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    # Internal; required for closing, empty for reopening
+    reason = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=(Q(action="close") & Q(reason__regex=r"[^[:space:]]")) | (Q(action="reopen") & Q(reason="")),
+                name="conversation_admin_action_reason_matches",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.get_action_display()} · {self.admin} · {self.created_at:%Y-%m-%d %H:%M}"
+
+
 class ImmutableMessageError(Exception):
     """Raised on any attempt to change or remove a message."""
 

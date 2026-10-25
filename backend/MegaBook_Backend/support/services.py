@@ -16,7 +16,7 @@ from book_requests.models import BookRequest, RequestEntry
 from catalog.models import Book
 from notifications import services as notifications
 
-from .models import MAX_MESSAGE_LENGTH, Conversation, Message
+from .models import MAX_MESSAGE_LENGTH, Conversation, ConversationAdminAction, Message
 
 CONVERSATION_CLOSED = "این گفت‌وگو بسته است و پیام تازه نمی‌پذیرد."
 MESSAGE_EMPTY = "متن پیام را بنویسید."
@@ -39,7 +39,8 @@ REQUEST_TEXTS = {
 }
 BOOK_TEXTS = {
     Book.Status.APPROVED: "کتاب شما تأیید شد و در فروشگاه قرار گرفت.",
-    Book.Status.REJECTED: "کتاب شما رد شد. پشتیبانی دلیل را در همین گفت‌وگو می‌نویسد.",
+    # The rejection reason is appended (the admin's text, sent as is), like requests
+    Book.Status.REJECTED: "کتاب شما رد شد. دلیل: {reason}",
 }
 
 # Who counts as "the other side" when counting unread messages
@@ -183,6 +184,9 @@ def close(conversation, admin, reason):
         conversation.closed_by = admin
         conversation.close_reason_internal = reason
         conversation.save()
+        ConversationAdminAction.objects.create(
+            conversation=conversation, action=ConversationAdminAction.Action.CLOSE, admin=admin, reason=reason
+        )
         _system(conversation, CLOSED_BY_SUPPORT)
     return conversation
 
@@ -194,6 +198,9 @@ def reopen(conversation, admin):
         if not conversation.is_closed:
             raise SupportError(NOT_CLOSED)
         _open(conversation)
+        ConversationAdminAction.objects.create(
+            conversation=conversation, action=ConversationAdminAction.Action.REOPEN, admin=admin
+        )
         _system(conversation, REOPENED)
     return conversation
 
@@ -232,7 +239,7 @@ def on_book_status_changed(book, previous):
     to pending) write nothing. Closing is never automatic for uploads."""
     text = BOOK_TEXTS.get(book.status)
     if text:
-        _system(_locked_for(book), text)
+        _system(_locked_for(book), text.format(reason=book.rejection_reason))
 
 
 # ---------------------------------------------------------------------------
@@ -280,6 +287,27 @@ def user_unread_subquery(parent_field):
         )
         .order_by()
         .values(f"conversation__{parent_field}")
+        .annotate(n=Count("id"))
+        .values("n")[:1]
+    )
+    return Coalesce(Subquery(unread, output_field=IntegerField()), Value(0))
+
+
+def support_unread_subquery(lookup):
+    """User messages support hasn't read yet, as a subquery for a list of rows matched
+    by OuterRef("pk"). `lookup` is the path from Message to those rows: "conversation",
+    "conversation__book", "conversation__request_entry", or
+    "conversation__request_entry__request" (a shared request: the sum over its
+    requesters' conversations). 0 when there's nothing. A subquery, not a JOIN, so it
+    can sit next to other counts without multiplying rows."""
+    unread = (
+        Message.objects.filter(**{lookup: OuterRef("pk")}, sender=Message.Sender.USER)
+        .filter(
+            Q(conversation__support_last_read_at__isnull=True)
+            | Q(created_at__gt=F("conversation__support_last_read_at"))
+        )
+        .order_by()
+        .values(lookup)
         .annotate(n=Count("id"))
         .values("n")[:1]
     )

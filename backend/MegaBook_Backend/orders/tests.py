@@ -39,6 +39,7 @@ class BookFactory:
         return Book.objects.create(
             title=title or f"کتاب {cls.counter}", isbn=f"979{cls.counter:010d}", status=book_status,
             price=price, seller_share=share, uploaded_by=uploader, book_file="books/files/x.pdf",
+            rejection_reason="دلیل نمونه" if book_status == Book.Status.REJECTED else "",
         )
 
 

@@ -28,6 +28,7 @@ class BookFactory:
         return Book.objects.create(
             title=title or f"کتاب {cls.counter}", isbn=f"978{cls.counter:010d}", status=book_status,
             price=price, uploaded_by=uploader, book_file="books/files/x.pdf",
+            rejection_reason="دلیل نمونه" if book_status == Book.Status.REJECTED else "",
         )
 
 
@@ -129,7 +130,7 @@ class CartApiTests(APITestCase):
         other = BookFactory.make(self.seller, price=30_000)
         self.add(self.book.pk)
         self.add(other.pk)
-        Book.objects.filter(pk=self.book.pk).update(status=Book.Status.REJECTED)
+        Book.objects.filter(pk=self.book.pk).update(status=Book.Status.REJECTED, rejection_reason="فایل ناقص")
         data = self.cart()
         statuses = {i["book"]["id"]: i["status"] for i in data["items"]}
         self.assertEqual(statuses, {self.book.pk: "unavailable", other.pk: "ok"})

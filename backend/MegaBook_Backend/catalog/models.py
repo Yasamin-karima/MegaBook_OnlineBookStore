@@ -15,6 +15,7 @@ BOOK_EXISTS_PENDING = "این کتاب بارگذاری شده و در انتظ�
 # Money rules for an approved book (Book.apply_money_rules)
 APPROVED_NEEDS_PRICE = "برای تأیید کتاب، قیمت فروش را تعیین کنید."
 PRICE_BELOW_SELLER_SHARE = "قیمت فروش نمی‌تواند کمتر از سهم بارگذارنده باشد."
+REJECTION_REASON_REQUIRED = "برای رد کردن کتاب، دلیل رد را بنویسید."
 
 
 class Person(models.Model):
@@ -122,6 +123,9 @@ class Book(models.Model):
     status = models.CharField(
         max_length=10, choices=Status.choices, default=Status.PENDING
     )
+    # Required while rejected, cleared when it leaves rejected (like BookRequest, 5.4).
+    # Sent to the uploader as is, in a system message of the upload's conversation.
+    rejection_reason = models.TextField(blank=True, help_text="این متن عیناً برای بارگذارنده ارسال می‌شود")
     uploaded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -148,6 +152,14 @@ class Book(models.Model):
                 condition=~Q(status="approved") | (Q(price__isnull=False) & Q(price__gte=F("seller_share"))),
                 name="approved_book_price_covers_seller_share",
                 violation_error_message=PRICE_BELOW_SELLER_SHARE,
+            ),
+            # The last layer of apply_status_rules: rejected with a reason, or any other
+            # status without one
+            models.CheckConstraint(
+                condition=(Q(status="rejected") & ~Q(rejection_reason=""))
+                | (~Q(status="rejected") & Q(rejection_reason="")),
+                name="book_rejection_reason_matches_status",
+                violation_error_message=REJECTION_REASON_REQUIRED,
             ),
         ]
 
@@ -180,13 +192,25 @@ class Book(models.Model):
         if self.price < self.seller_share:
             raise ValidationError({"price": PRICE_BELOW_SELLER_SHARE})
 
+    def apply_status_rules(self):
+        """Rejected needs a reason; any other status clears it (the same rule as
+        BookRequest.apply_status_rules)."""
+        self.rejection_reason = (self.rejection_reason or "").strip()
+        if self.status == self.Status.REJECTED:
+            if not self.rejection_reason:
+                raise ValidationError({"rejection_reason": REJECTION_REASON_REQUIRED})
+        else:
+            self.rejection_reason = ""
+
     def clean(self):
         # Here so the admin form shows the error next to the price field
         super().clean()
+        self.apply_status_rules()
         self.apply_money_rules()
 
     def save(self, *args, **kwargs):
         # Here so the rule holds however the book is saved: admin, API, seed, shell
+        self.apply_status_rules()
         self.apply_money_rules()
         adding = self._state.adding or self.pk is None
         previous = None
@@ -223,7 +247,10 @@ class Book(models.Model):
         if previous is not None and previous != self.status:
             kind = {self.Status.APPROVED: Type.UPLOAD_APPROVED, self.Status.REJECTED: Type.UPLOAD_REJECTED}.get(self.status)
             if kind:
-                notifications.notify(kind, [self.uploaded_by], book=self, params={"title": self.title})
+                params = {"title": self.title}
+                if self.status == self.Status.REJECTED:
+                    params["reason"] = self.rejection_reason
+                notifications.notify(kind, [self.uploaded_by], book=self, params=params)
 
     @classmethod
     def active_for_isbn(cls, isbn):

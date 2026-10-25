@@ -45,6 +45,7 @@ class BookFactory:
         book = Book.objects.create(
             title=f"کتاب {cls.counter}", isbn=f"979{cls.counter:010d}", status=book_status,
             price=price, seller_share=0, uploaded_by=uploader, book_file="books/files/x.pdf",
+            rejection_reason="دلیل نمونه" if book_status == Book.Status.REJECTED else "",
         )
         if author:
             book.authors.add(Person.objects.get_or_create(name=author)[0])
@@ -137,6 +138,7 @@ class EligibilityTests(ReviewTestBase):
 
     def test_unapproved_book(self):
         self.book.status = Book.Status.REJECTED
+        self.book.rejection_reason = "فایل ناقص"
         self.book.save()
         # The buyer is told why; anyone else gets 404, as for the book page
         res = self.post_review(self.buyer)

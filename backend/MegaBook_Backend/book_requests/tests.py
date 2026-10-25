@@ -113,7 +113,7 @@ class BookRequestApiTests(APITestCase):
     def test_rejected_book_does_not_block_request(self):
         # کتاب رد شده دوباره قابل بارگذاری است، پس درخواستش هم معنا دارد
         Book.objects.create(
-            title="x", isbn=ISBN, price=0, status=Book.Status.REJECTED,
+            title="x", isbn=ISBN, price=0, status=Book.Status.REJECTED, rejection_reason="فایل ناقص",
             uploaded_by=self.sara, book_file="books/files/x.pdf",
         )
         res = self.post(self.ali)
@@ -545,6 +545,7 @@ class BookOnSaleSyncTests(APITestCase):
         self.approve(book)
 
         book.status = Book.Status.REJECTED
+        book.rejection_reason = "فایل ناقص"
         book.save()
         book_request.refresh_from_db()
         self.assertEqual(book_request.status, "open")

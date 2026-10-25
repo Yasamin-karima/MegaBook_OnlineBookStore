@@ -12,7 +12,7 @@ from django.utils.html import format_html
 from notifications import services as notifications
 
 from . import services
-from .models import Conversation, Message
+from .models import Conversation, ConversationAdminAction, Message
 
 
 class MessageInline(admin.TabularInline):
@@ -22,6 +22,22 @@ class MessageInline(admin.TabularInline):
     readonly_fields = fields
     extra = 0
     can_delete = False
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+class AdminActionInline(admin.TabularInline):
+    """Who closed or reopened it and when, read-only (support.services writes these)."""
+    model = ConversationAdminAction
+    fields = ("created_at", "action", "admin", "reason")
+    readonly_fields = fields
+    extra = 0
+    can_delete = False
+    verbose_name_plural = "بستن و بازگشایی‌ها"
 
     def has_add_permission(self, request, obj=None):
         return False
@@ -101,7 +117,7 @@ class ConversationAdmin(admin.ModelAdmin):
     )
     list_select_related = ("request_entry__request", "request_entry__requester", "book__uploaded_by")
     raw_id_fields = ("request_entry", "book")
-    inlines = [MessageInline]
+    inlines = [MessageInline, AdminActionInline]
 
     def get_queryset(self, request):
         # The unread count of every listed row in the same query (no N+1)

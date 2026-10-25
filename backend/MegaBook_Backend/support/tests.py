@@ -14,7 +14,7 @@ from catalog.models import Book
 
 from . import services
 from .admin import ConversationAdmin
-from .models import Conversation, ImmutableMessageError, Message
+from .models import Conversation, ConversationAdminAction, ImmutableMessageError, Message
 
 User = get_user_model()
 PASSWORD = "Str0ng-Passw0rd!"
@@ -246,9 +246,10 @@ class StatusChangeTests(TestCase):
         book.status, book.price = Book.Status.APPROVED, 10_000
         book.save()
         self.assertEqual(system_texts(book), ["کتاب شما تأیید شد و در فروشگاه قرار گرفت."])
-        book.status = Book.Status.REJECTED
+        book.status, book.rejection_reason = Book.Status.REJECTED, "فایل ناقص است"
         book.save()
-        self.assertEqual(len(system_texts(book)), 2)
+        # The admin's reason goes to the uploader as is
+        self.assertEqual(system_texts(book)[-1], "کتاب شما رد شد. دلیل: فایل ناقص است")
         book.status = Book.Status.PENDING
         book.save()
         self.assertEqual(len(system_texts(book)), 2)  # back to pending writes nothing
@@ -284,6 +285,23 @@ class ClosingTests(APITestCase):
         services.reopen(self.conversation, self.admin)
         self.assertEqual(self.client.post(f"{self.url}messages/", {"text": "ممنون"}).status_code, 201)
         self.assertIn("گفت‌وگو دوباره باز شد.", [m["text"] for m in self.client.get(self.url).data["messages"]])
+
+    def test_close_and_reopen_are_recorded_with_admin_and_time(self):
+        services.close(self.conversation, self.admin, "مزاحمت")
+        services.reopen(self.conversation, self.admin)
+        services.close(self.conversation, self.admin, "دوباره مزاحمت")
+        actions = list(
+            ConversationAdminAction.objects.filter(conversation=self.conversation)
+            .order_by("created_at", "id").values_list("action", "admin", "reason")
+        )
+        # Every cycle is kept, even though the conversation's own closed_* fields
+        # only describe the current close
+        self.assertEqual(actions, [
+            ("close", self.admin.pk, "مزاحمت"),
+            ("reopen", self.admin.pk, ""),
+            ("close", self.admin.pk, "دوباره مزاحمت"),
+        ])
+        self.assertTrue(all(a.created_at for a in ConversationAdminAction.objects.all()))
 
     def test_close_needs_admin_and_reason(self):
         with self.assertRaises(services.SupportError):
@@ -349,11 +367,14 @@ class UnreadTests(APITestCase):
         self.assertEqual(services.unread_for_user(self.user)["requests"], {})
 
 
-def inline_management(count=0):
-    """The hidden fields the admin page always sends for the messages inline."""
+def inline_management(count=0, actions=0):
+    """The hidden fields the admin page always sends for its two inlines (the messages,
+    and the close/reopen history)."""
     return {
         "messages-TOTAL_FORMS": str(count), "messages-INITIAL_FORMS": str(count),
         "messages-MIN_NUM_FORMS": "0", "messages-MAX_NUM_FORMS": "1000",
+        "admin_actions-TOTAL_FORMS": str(actions), "admin_actions-INITIAL_FORMS": str(actions),
+        "admin_actions-MIN_NUM_FORMS": "0", "admin_actions-MAX_NUM_FORMS": "1000",
     }
 
 
@@ -384,7 +405,7 @@ class AdminTests(TestCase):
         self.client.post(url, {"reply": "", "close": "on", "close_reason": "اسپم", **inline_management(1)})
         conversation.refresh_from_db()
         self.assertEqual((conversation.closed_kind, conversation.closed_by), ("support", self.admin))
-        self.client.post(url, {"reply": "", "reopen": "on", **inline_management(2)})
+        self.client.post(url, {"reply": "", "reopen": "on", **inline_management(2, actions=1)})
         conversation.refresh_from_db()
         self.assertFalse(conversation.is_closed)
 

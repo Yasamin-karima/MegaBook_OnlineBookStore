@@ -327,6 +327,7 @@ class Command(BaseCommand):
             price=data["price"],
             seller_share=data["seller_share"],
             status=data["status"],
+            rejection_reason=data.get("rejection_reason", ""),
             uploaded_by=uploader,
             # ContentFile فایلِ در حافظه است؛ Django هنگام ذخیره آن را در MEDIA_ROOT/upload_to می‌نویسد
             cover=ContentFile(make_cover(data["title"], data["authors"][0], data["color"]), name=f"{isbn}.png"),

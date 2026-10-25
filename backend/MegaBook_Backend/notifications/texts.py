@@ -62,8 +62,10 @@ def render(n, request=None):
             link = _app(f"/books/{n.book_id}") if n.book_id else None
             return _out("✅", f"کتاب «{title}» که بارگذاری کرده بودید تأیید شد و در فروشگاه قرار گرفت.", link)
         case Type.UPLOAD_REJECTED:
-            # Book has no reason field: support writes it in the upload's conversation (12.3)
             link = _app(f"/uploads/{n.book_id}") if n.book_id else None
+            if reason:
+                return _out("❌", f"کتاب «{title}» که بارگذاری کرده بودید تأیید نشد. دلیل: {reason}", link)
+            # Older notifications, from before Book had a rejection reason
             return _out("❌", f"کتاب «{title}» که بارگذاری کرده بودید تأیید نشد. دلیل را در گفت‌وگوی این بارگذاری ببینید.", link)
         case Type.SUPPORT_REPLY:
             return _out("💬", f"پشتیبانی مگابوک در گفت‌وگوی «{title}» به شما پاسخ داد.", _conversation_path(n))

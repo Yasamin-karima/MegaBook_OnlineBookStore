@@ -9,6 +9,7 @@
   برای ترجمه‌های فارسی سال شمسی، برای کتاب‌های انگلیسی سال میلادی.
 - category: نام یکی از CATEGORIES.
 - status: یکی از مقادیر Book.Status ("approved" / "pending" / "rejected").
+- rejection_reason: فقط برای کتاب رد شده، و برای آن الزامی است.
 - price: قیمت فروشگاه به تومان (صفر = رایگان)؛ برای کتاب تأییدنشده None (هنوز تعیین نشده).
 - seller_share: سهم بارگذارنده از هر فروش به تومان؛ برای کتاب تأییدشده نباید از price بیشتر باشد.
 - uploader (اختیاری): "admin" یعنی superuser بارگذارنده است و seller_share باید صفر باشد؛
@@ -151,6 +152,7 @@ SAMPLE_BOOKS = [
         "price": None,  # rejected before a price was set
         "seller_share": 150000,
         "status": "rejected",  # برای تست: فروشگاه نباید این را نشان دهد
+        "rejection_reason": "فایل PDF ناقص است؛ لطفاً نسخهٔ کامل را دوباره بارگذاری کنید.",
         "color": "#7a1f2b",
         "description": (
             "On his eleventh birthday Harry Potter learns that he is a wizard and is invited to Hogwarts "

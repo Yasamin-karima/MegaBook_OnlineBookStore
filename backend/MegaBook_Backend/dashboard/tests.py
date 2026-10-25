@@ -28,6 +28,7 @@ class BookFactory:
         return Book.objects.create(
             title=f"کتاب {cls.counter}", isbn=f"977{cls.counter:010d}", status=book_status,
             price=price, seller_share=share, uploaded_by=uploader, book_file="books/files/x.pdf",
+            rejection_reason="دلیل نمونه" if book_status == Book.Status.REJECTED else "",
         )
 
 
@@ -107,6 +108,7 @@ class DashboardTests(APITestCase):
         for book in (ok, gone):
             cart_services.add(user, book.pk)
         gone.status = Book.Status.REJECTED
+        gone.rejection_reason = "فایل ناقص"
         gone.save()
 
         data = self.get(user)
