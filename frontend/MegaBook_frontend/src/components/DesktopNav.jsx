@@ -1,11 +1,12 @@
 import React from 'react'
 import { NavLink, Link, useLocation } from 'react-router-dom'
-import { LuShoppingCart, LuLibrary, LuUser, LuStore, LuBell, LuLogIn, LuCircleUser } from 'react-icons/lu'
+import { LuShoppingCart, LuLibrary, LuUser, LuStore, LuBell, LuLogIn, LuCircleUser, LuShieldCheck } from 'react-icons/lu'
 import { PiSwap } from 'react-icons/pi'
 import logo from '../assets/logo.svg'
 import { isLoggedIn } from '../api/auth'
 import useCart from '../hooks/useCart'
 import useNotifications from '../hooks/useNotifications'
+import useIsStaff from '../hooks/useIsStaff'
 import { UnreadBadge } from './NotificationsPage'
 
 // The desktop version of BottomNavbar: the same five destinations, as a side bar on the
@@ -33,6 +34,8 @@ const DesktopNav = () => {
     // The same count as every other cart badge (CartProvider)
     const { count } = useCart()
     const { unread } = useNotifications()
+    // Admins get a way into the admin dashboard from every page with this nav
+    const isStaff = useIsStaff()
 
     return (
         <aside className="fixed inset-y-0 start-0 z-20 hidden w-20 flex-col border-e border-gray-200 bg-[#f9fcfc] md:flex lg:w-60">
@@ -60,6 +63,16 @@ const DesktopNav = () => {
             </nav>
 
             <div className="flex flex-col gap-1 border-t border-gray-200 px-2 py-3 lg:px-3">
+                {isStaff && (
+                    // Dark, unlike the store's items: it leaves the store for the admin dashboard
+                    <Link
+                        to="/admin"
+                        className="flex flex-col items-center gap-1 rounded-2xl bg-gray-900 px-1 py-2 text-xs font-semibold text-white transition-colors hover:bg-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4c687c] focus-visible:ring-offset-2 lg:flex-row lg:gap-3 lg:px-4 lg:py-2.5 lg:text-sm"
+                    >
+                        <LuShieldCheck className="shrink-0 text-2xl lg:text-xl" aria-hidden="true" />
+                        <span className="text-center leading-4 lg:text-start lg:leading-normal">پنل مدیریت</span>
+                    </Link>
+                )}
                 <NavLink to="/notifications" className={itemClass}>
                     <LuBell className="shrink-0 text-2xl lg:text-xl" aria-hidden="true" />
                     <span>اعلان‌ها</span>

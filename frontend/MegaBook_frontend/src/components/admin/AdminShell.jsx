@@ -56,6 +56,14 @@ export default function AdminShell({ active, children }) {
         <div className="flex h-14 items-center gap-2 px-4 text-white">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-sm font-bold" aria-hidden="true">م</span>
           <span className="font-bold">مدیریت مگابوک</span>
+          {/* Below lg the way back to the store is here (the link at the menu's foot is lg+ only) */}
+          <Link
+            to="/"
+            className="ms-auto flex h-9 items-center gap-1.5 rounded-lg bg-white/10 px-3 text-sm font-semibold text-white hover:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 lg:hidden"
+          >
+            <span aria-hidden="true">🏪</span>
+            بازگشت به فروشگاه
+          </Link>
         </div>
         <ul className="flex gap-1 overflow-x-auto px-2 pb-2 lg:flex-1 lg:flex-col lg:overflow-visible lg:pb-4">
           {ADMIN_NAV.map((item) => {

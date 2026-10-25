@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import useIsStaff from "../hooks/useIsStaff";
 import { logoutUser } from "../api/auth";
 import { getDashboard } from "../api/dashboard";
 import { formatPrice, toFaNumber } from "../utils/format";
@@ -33,6 +34,7 @@ export default function DashboardPage() {
   const [reloadKey, setReloadKey] = useState(0);
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const isStaff = useIsStaff();
 
   useEffect(() => {
     let cancelled = false;
@@ -74,7 +76,7 @@ export default function DashboardPage() {
       <div className="mx-auto w-full max-w-md md:max-w-5xl">
         {/* ═══ نوار بالا ═══
             زنگ اعلان‌ها برداشته شد: اعلان‌ها هنوز بک‌اند ندارند. */}
-        <header className="sticky top-0 z-20 flex h-14 items-center gap-1 border-b border-gray-200 bg-gray-100/90 px-2 backdrop-blur md:px-6">
+        <header className="sticky top-16 z-20 md:top-0 flex h-14 items-center gap-1 border-b border-gray-200 bg-gray-100/90 px-2 backdrop-blur md:px-6">
           {/* md+: hidden, the side nav already links to the store */}
           <Link
             to="/"
@@ -246,6 +248,7 @@ export default function DashboardPage() {
             <section className="mx-4 mt-6 md:col-start-1 md:row-start-3 md:mx-0 md:self-start">
               <h2 className="mb-2 text-base font-bold text-gray-900">حساب کاربری</h2>
               <div className="divide-y divide-gray-100 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+                {isStaff && <MenuLink to="/admin" icon="🛠️" label="پنل مدیریت" />}
                 <MenuLink to="/account" icon="👤" label="ویرایش اطلاعات حساب" />
                 <MenuLink to="/settings/password" icon="🔒" label="تغییر رمز عبور" />
 
