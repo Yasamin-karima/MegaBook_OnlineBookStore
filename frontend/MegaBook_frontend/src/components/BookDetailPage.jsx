@@ -75,6 +75,12 @@ export default function BookDetailPage() {
     window.scrollTo(0, 0);
   }, [id]);
 
+  // /books/<id>#reviews (e.g. from a notification): go to the reviews once the page is there
+  const hashTarget = location.hash === "#reviews" && status === "ready";
+  useEffect(() => {
+    if (hashTarget) document.getElementById("reviews")?.scrollIntoView({ block: "start" });
+  }, [hashTarget, id]);
+
   // تایمر پیام کوتاه موقع بسته شدن صفحه پاک شود
   useEffect(() => () => clearTimeout(toastTimer.current), []);
 

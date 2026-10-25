@@ -208,6 +208,22 @@ class Book(models.Model):
                 from support.services import on_book_status_changed
 
                 on_book_status_changed(self, previous)
+            self._notify(adding, previous)
+
+    def _notify(self, adding, previous):
+        """In-site notifications (DECISIONS 14), from the same place as the rest: whoever
+        saves the book (admin form, API, shell) notifies the same way, and only when
+        the status actually changed (editing an approved book's price notifies nobody)."""
+        from notifications import services as notifications
+
+        Type = notifications.Type
+        if adding and self.status == self.Status.PENDING:
+            # A user's upload waits for review (an admin's own upload is created approved)
+            notifications.notify(Type.STAFF_NEW_UPLOAD, notifications.STAFF, book=self, params={"title": self.title})
+        if previous is not None and previous != self.status:
+            kind = {self.Status.APPROVED: Type.UPLOAD_APPROVED, self.Status.REJECTED: Type.UPLOAD_REJECTED}.get(self.status)
+            if kind:
+                notifications.notify(kind, [self.uploaded_by], book=self, params={"title": self.title})
 
     @classmethod
     def active_for_isbn(cls, isbn):

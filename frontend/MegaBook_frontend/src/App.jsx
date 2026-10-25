@@ -21,6 +21,7 @@ import ChangePasswordPage from './components/ChangePasswordPage';
 import PublicRequestsPage from './components/PublicRequestsPage';
 import ConversationPage from './components/ConversationPage';
 import MyRequestsUploadsPage from './components/MyRequestsUploadsPage';
+import NotificationsPage from './components/NotificationsPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import useGoBack from './hooks/useGoBack';
 
@@ -184,6 +185,14 @@ const App = () => {
           }
         />
         {/* داشبورد: خلاصه‌ی حساب، کیف پول، سبد، درخواست‌ها و بارگذاری‌ها */}
+        <Route
+          path="/notifications"
+          element={
+            <ProtectedRoute>
+              <NotificationsPage />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/dashboard"
           element={

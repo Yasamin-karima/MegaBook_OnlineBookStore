@@ -14,6 +14,7 @@ from rest_framework.views import APIView
 
 from book_requests.models import BookRequest, RequestEntry
 from catalog.models import Book
+from notifications import services as notifications
 from orders.models import OrderItem
 from wallet.models import LedgerEntry
 
@@ -94,6 +95,10 @@ class ConversationView(APIView):
             after = request.query_params.get("after")
             if after and after.isdigit():
                 messages = messages.filter(pk__gt=int(after))
+            else:
+                # Opening the conversation (not the polling): its notification is read,
+                # however the user got here
+                notifications.mark_conversation_read(request.user, conversation)
         return Response({
             "item": self.describe(request, parent),
             "conversation": conversation_state(conversation),

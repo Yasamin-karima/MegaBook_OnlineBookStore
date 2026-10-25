@@ -18,6 +18,7 @@ from cart import services as cart_services
 from cart.models import CartItem
 from catalog.ownership import owned_book_ids
 from library.models import LibraryItem
+from notifications import services as notifications
 from wallet import services as wallet_services
 
 from .models import Order, OrderItem
@@ -53,8 +54,14 @@ def _lock_buyer(user):
     deadlock. The user row is a different table that no code locks after a wallet,
     so it can't form a cycle. cart.services.add takes the same lock, so adding to
     the cart during a checkout simply waits.
+
+    FOR NO KEY UPDATE, not plain FOR UPDATE: inserting a row with a foreign key to a
+    user (a notification for the seller) takes a KEY SHARE lock on that user, which
+    FOR UPDATE blocks and NO KEY UPDATE doesn't. With FOR UPDATE, Ali and Sara buying
+    each other's books would each wait to notify the other: a deadlock. Two NO KEY
+    UPDATE locks still exclude each other, so checkouts by one user still run in turn.
     """
-    get_user_model().objects.select_for_update().filter(pk=user.pk).first()
+    get_user_model().objects.select_for_update(no_key=True).filter(pk=user.pk).first()
 
 
 def _buyer_description(items):
@@ -131,7 +138,17 @@ def checkout(user):
                     shortfall=shortfall,
                 )
 
-        # 7. Bought: the cart is empty now
+        # 7. The uploaders whose share reached their wallet: exactly the non-zero
+        #    sale_income legs above. A free book or an admin's book moves no money to
+        #    anyone, so it notifies no one (DECISIONS 14).
+        for item in items:
+            if item.seller_share:
+                notifications.notify(
+                    notifications.Type.SALE_INCOME, [item.book.uploaded_by], order_item=item, book=item.book,
+                    params={"title": item.book.title, "amount": item.seller_share},
+                )
+
+        # 8. Bought: the cart is empty now
         cart_services.clear(user)
 
     return Order.objects.prefetch_related("items__book").get(pk=order.pk)

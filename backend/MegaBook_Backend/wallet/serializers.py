@@ -2,6 +2,8 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework import serializers
 
+from notifications import services as notifications
+
 from .models import DEPOSIT_IN_FUTURE, TRACKING_TAKEN, LedgerEntry, TopUpRequest, WithdrawalRequest
 from .normalize import TRACKING_MAX_LENGTH, InvalidNumber, normalize_tracking_number
 
@@ -96,7 +98,12 @@ class TopUpRequestSerializer(serializers.ModelSerializer):
         # approves it through services.approve_topup
         try:
             with transaction.atomic():
-                return TopUpRequest.objects.create(user=self.context["request"].user, **validated_data)
+                topup = TopUpRequest.objects.create(user=self.context["request"].user, **validated_data)
+                notifications.notify(
+                    notifications.Type.STAFF_NEW_TOPUP, notifications.STAFF,
+                    topup_request=topup, params={"amount": topup.amount},
+                )
+                return topup
         except IntegrityError:
             # Two requests with the same tracking number at the same moment
             raise serializers.ValidationError({"tracking_number": [TRACKING_TAKEN]})

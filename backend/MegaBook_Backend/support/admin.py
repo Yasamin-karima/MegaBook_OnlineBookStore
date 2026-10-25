@@ -9,6 +9,8 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import format_html
 
+from notifications import services as notifications
+
 from . import services
 from .models import Conversation, Message
 
@@ -124,6 +126,10 @@ class ConversationAdmin(admin.ModelAdmin):
         # Opening the conversation counts as support reading it
         if request.method == "GET":
             Conversation.objects.filter(pk=object_id).update(support_last_read_at=timezone.now())
+            # ...and THIS admin's notification for it; other admins' copies stay unread
+            notifications.mark_conversation_read(
+                request.user, Conversation.objects.filter(pk=object_id).first(), notifications.Type.STAFF_USER_MESSAGE
+            )
         return super().change_view(request, object_id, form_url, extra_context)
 
     def save_model(self, request, obj, form, change):

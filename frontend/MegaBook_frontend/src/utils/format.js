@@ -36,6 +36,26 @@ export function formatDate(iso) {
   return new Date(iso).toLocaleDateString("fa-IR", { year: "numeric", month: "long", day: "numeric" });
 }
 
+// زمان نسبی با رقم فارسی: «همین حالا»، «۵ دقیقه پیش»، «دیروز»، «۲ ماه پیش»
+const RELATIVE = new Intl.RelativeTimeFormat("fa", { numeric: "auto" });
+const RELATIVE_STEPS = [
+  [60, "second"],
+  [60, "minute"],
+  [24, "hour"],
+  [30, "day"],
+  [12, "month"],
+  [Infinity, "year"],
+];
+export function formatRelativeTime(iso) {
+  let value = (new Date(iso).getTime() - Date.now()) / 1000;
+  if (Math.abs(value) < 60) return "همین حالا";
+  for (const [size, unit] of RELATIVE_STEPS) {
+    if (Math.abs(value) < size) return RELATIVE.format(Math.round(value), unit);
+    value /= size;
+  }
+  return formatDate(iso);
+}
+
 // قیمت به تومان (عدد صحیح)؛ صفر یعنی رایگان
 export function formatPrice(price) {
   if (price === 0) return "رایگان";

@@ -30,6 +30,8 @@ from django.db.models import BigIntegerField, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
+from notifications import services as notifications
+
 from .models import GatewayPayment, LedgerEntry, TopUpRequest, Wallet, WithdrawalRequest
 from .normalize import InvalidNumber, normalize_card_number
 
@@ -140,6 +142,9 @@ def approve_topup(request, admin):
         request.reviewed_by = admin
         request.reviewed_at = timezone.now()
         request.save()
+        notifications.notify(
+            notifications.Type.TOPUP_APPROVED, [request.user], topup_request=request, params={"amount": request.amount}
+        )
         # The unique constraint on topup_request is the last guard against a double credit
         return LedgerEntry.objects.create(
             wallet=wallet, amount=request.amount, type=LedgerEntry.Type.TOPUP, topup_request=request,
@@ -160,6 +165,10 @@ def reject_topup(request, admin, reason):
         request.reviewed_by = admin
         request.reviewed_at = timezone.now()
         request.save()
+        notifications.notify(
+            notifications.Type.TOPUP_REJECTED, [request.user], topup_request=request,
+            params={"amount": request.amount, "reason": reason},
+        )
         return request
 
 
@@ -219,6 +228,10 @@ def create_withdrawal(user, amount, card_number):
             wallet=wallet, amount=-amount, type=LedgerEntry.Type.WITHDRAWAL, withdrawal_request=request,
             description=f"برداشت به کارت {request.masked_card}",
         )
+        notifications.notify(
+            notifications.Type.STAFF_NEW_WITHDRAWAL, notifications.STAFF,
+            withdrawal_request=request, params={"amount": amount},
+        )
         return request
 
 
@@ -232,6 +245,10 @@ def complete_withdrawal(request, admin, note=""):
         request.reviewed_by = admin
         request.reviewed_at = timezone.now()
         request.save()
+        notifications.notify(
+            notifications.Type.WITHDRAWAL_COMPLETED, [request.user],
+            withdrawal_request=request, params={"amount": request.amount},
+        )
         return request
 
 
@@ -250,6 +267,10 @@ def reject_withdrawal(request, admin, note):
         request.reviewed_by = admin
         request.reviewed_at = timezone.now()
         request.save()
+        notifications.notify(
+            notifications.Type.WITHDRAWAL_REJECTED, [request.user],
+            withdrawal_request=request, params={"amount": request.amount, "reason": note},
+        )
         LedgerEntry.objects.create(
             wallet=wallet, amount=request.amount, type=LedgerEntry.Type.WITHDRAWAL_REVERSAL,
             withdrawal_request=request, description="برگشت مبلغ درخواست برداشت ردشده",

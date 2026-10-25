@@ -5,6 +5,8 @@ import { PiSwap } from 'react-icons/pi'
 import logo from '../assets/logo.svg'
 import { isLoggedIn } from '../api/auth'
 import useCart from '../hooks/useCart'
+import useNotifications from '../hooks/useNotifications'
+import { UnreadBadge } from './NotificationsPage'
 
 // The desktop version of BottomNavbar: the same five destinations, as a side bar on the
 // right (RTL start). Hidden below md, where BottomNavbar (home page) takes over.
@@ -30,6 +32,7 @@ const DesktopNav = () => {
     const loggedIn = isLoggedIn()
     // The same count as every other cart badge (CartProvider)
     const { count } = useCart()
+    const { unread } = useNotifications()
 
     return (
         <aside className="fixed inset-y-0 start-0 z-20 hidden w-20 flex-col border-e border-gray-200 bg-[#f9fcfc] md:flex lg:w-60">
@@ -57,10 +60,11 @@ const DesktopNav = () => {
             </nav>
 
             <div className="flex flex-col gap-1 border-t border-gray-200 px-2 py-3 lg:px-3">
-                <a href="#" className={itemClass({ isActive: false })}>
+                <NavLink to="/notifications" className={itemClass}>
                     <LuBell className="shrink-0 text-2xl lg:text-xl" aria-hidden="true" />
                     <span>اعلان‌ها</span>
-                </a>
+                    {loggedIn && <UnreadBadge count={unread} className="absolute top-1 end-3 lg:static lg:ms-auto" />}
+                </NavLink>
                 {/* Logged in: the account page; otherwise the login page */}
                 <NavLink to={loggedIn ? '/account' : '/login'} className={itemClass}>
                     {loggedIn

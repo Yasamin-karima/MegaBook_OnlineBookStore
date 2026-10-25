@@ -180,8 +180,13 @@ class Review(models.Model):
             self.checked_at = now
             self.save()
             ReviewHide.objects.create(review=self, hidden_by=admin, hidden_at=now, reason=reason)
-            # TODO (notifications): the author must get a notification here, with the
-            # reason (self.hide_reason), once the notifications system exists.
+            # The author is told, with the reason (not who hid it)
+            from notifications import services as notifications
+
+            notifications.notify(
+                notifications.Type.REVIEW_HIDDEN, [self.user], review=self,
+                params={"title": self.book.title, "reason": reason},
+            )
 
     def unhide(self, admin):
         """Show the review again; the reason is cleared and the review is checked."""

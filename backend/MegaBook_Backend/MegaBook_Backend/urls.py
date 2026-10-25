@@ -32,6 +32,7 @@ urlpatterns = [
     path('library/', include('library.urls')),
     path('dashboard/', include('dashboard.urls')),
     path('support/', include('support.urls')),
+    path('notifications/', include('notifications.urls')),
 ]
 
 # فایل‌های آپلودشده (جلد، PDF) را در حالت توسعه خود جنگو سرو می‌کند.

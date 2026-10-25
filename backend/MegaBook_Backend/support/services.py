@@ -14,6 +14,7 @@ from django.utils import timezone
 
 from book_requests.models import BookRequest, RequestEntry
 from catalog.models import Book
+from notifications import services as notifications
 
 from .models import MAX_MESSAGE_LENGTH, Conversation, Message
 
@@ -82,6 +83,13 @@ def _locked_for(parent):
     return Conversation.objects.select_for_update().get(pk=conversation.pk)
 
 
+def subject(conversation):
+    """What the conversation is about: the requested book's or the upload's title."""
+    if conversation.request_entry_id:
+        return conversation.request_entry.request.title
+    return conversation.book.title
+
+
 def _clean_body(body):
     body = (body or "").strip()
     if not body:
@@ -120,6 +128,12 @@ def post_user_message(user, parent, body):
         )
         # Writing means having read everything before it
         Conversation.objects.filter(pk=conversation.pk).update(user_last_read_at=message.created_at)
+        notifications.mark_conversation_read(user, conversation)
+        # Every admin; not again while their last one for this conversation is unread
+        notifications.notify(
+            notifications.Type.STAFF_USER_MESSAGE, notifications.STAFF,
+            conversation=conversation, params={"title": subject(conversation)},
+        )
     return message
 
 
@@ -137,6 +151,13 @@ def post_support_message(admin, parent_or_conversation, body):
             conversation=conversation, sender=Message.Sender.SUPPORT, author=admin, body=body
         )
         Conversation.objects.filter(pk=conversation.pk).update(support_last_read_at=message.created_at)
+        # Replying means this admin has read it; other admins' copies stay unread
+        notifications.mark_conversation_read(admin, conversation, notifications.Type.STAFF_USER_MESSAGE)
+        # Not again while the owner's last one for this conversation is unread
+        notifications.notify(
+            notifications.Type.SUPPORT_REPLY, [conversation.owner],
+            conversation=conversation, params={"title": subject(conversation)},
+        )
     return message
 
 
@@ -221,6 +242,7 @@ def on_book_status_changed(book, previous):
 def mark_read_by_user(conversation):
     if conversation is not None:
         Conversation.objects.filter(pk=conversation.pk).update(user_last_read_at=timezone.now())
+        notifications.mark_conversation_read(conversation.owner, conversation)
 
 
 def mark_read_by_support(conversation):

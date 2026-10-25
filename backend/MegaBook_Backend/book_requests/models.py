@@ -85,6 +85,30 @@ class BookRequest(models.Model):
                 from support.services import on_request_status_changed
 
                 on_request_status_changed(self, previous)
+                if self.status in (self.Status.FULFILLED, self.Status.REJECTED):
+                    _notify_requesters(self)
+
+
+def _notify_requesters(book_request):
+    """Fulfilled or rejected: one notification per requester, in one INSERT. Each links to
+    the requester's own RequestEntry; the text never says how many asked or who uploaded."""
+    from catalog.models import Book
+    from notifications import services as notifications
+
+    if book_request.status == BookRequest.Status.FULFILLED:
+        kind = notifications.Type.REQUEST_FULFILLED
+        params = {"title": book_request.title}
+        # The book on sale with this ISBN, for the link
+        book = Book.objects.filter(isbn=book_request.isbn, status=Book.Status.APPROVED).first()
+    else:
+        kind = notifications.Type.REQUEST_REJECTED
+        params = {"title": book_request.title, "reason": book_request.rejection_reason}
+        book = None
+    entries = book_request.entries.select_related("requester")
+    notifications.notify(
+        kind, [(entry.requester, {"request_entry": entry}) for entry in entries],
+        params=params, book_request=book_request, book=book,
+    )
 
 
 def _stored_status(obj):

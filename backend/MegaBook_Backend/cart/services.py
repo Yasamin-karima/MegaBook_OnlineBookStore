@@ -46,8 +46,9 @@ def add(user, book_id):
     """
     with transaction.atomic():
         # Lock the user's row: their cart operations run one after another, so two
-        # adds at 49 items can't both pass the size check and leave 51
-        get_user_model().objects.select_for_update().filter(pk=user.pk).first()
+        # adds at 49 items can't both pass the size check and leave 51. The same
+        # NO KEY UPDATE lock as checkout (orders.services._lock_buyer explains why)
+        get_user_model().objects.select_for_update(no_key=True).filter(pk=user.pk).first()
 
         book = Book.objects.filter(pk=book_id).first()
         # A missing book and an unapproved one get the same answer, so the response

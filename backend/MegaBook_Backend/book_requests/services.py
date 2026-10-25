@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from django.db import IntegrityError, transaction
 
 from catalog.models import Book
+from notifications import services as notifications
 
 from .models import BookRequest, RequestEntry
 
@@ -63,6 +64,13 @@ def submit_request(user, *, isbn, title, authors="", cover_url="", notes="", req
             # فقط وقتی ساخته می‌شود به کار می‌رود؛ اگر درخواست از قبل بود، اطلاعات اولین نفر می‌ماند
             defaults={"title": title, "authors": authors, "cover_url": cover_url},
         )
+
+        if _created:
+            # Only the FIRST request for an ISBN tells the admins; joining one doesn't
+            notifications.notify(
+                notifications.Type.STAFF_NEW_REQUEST, notifications.STAFF,
+                book_request=book_request, params={"title": book_request.title, "isbn": book_request.isbn},
+            )
 
         if require_open and book_request.status != BookRequest.Status.OPEN:
             return SubmitOutcome(NOT_OPEN)
