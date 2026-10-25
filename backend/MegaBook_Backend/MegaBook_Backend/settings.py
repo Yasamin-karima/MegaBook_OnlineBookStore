@@ -58,6 +58,8 @@ INSTALLED_APPS = [
     'support',
     'reviews',
     'notifications',
+    # The React admin dashboard's API (/admin-api/); no models of its own
+    'admin_api',
 ]
 
 MIDDLEWARE = [

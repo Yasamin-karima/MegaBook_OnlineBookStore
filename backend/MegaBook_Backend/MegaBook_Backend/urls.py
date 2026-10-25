@@ -21,6 +21,8 @@ from django.urls import path, include
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    # The React admin dashboard (staff only; 404 for everyone else)
+    path('admin-api/', include('admin_api.urls')),
     path('accounts/', include('accounts.urls')),
     # A book's reviews: /catalog/books/<id>/reviews/ (the reviews app)
     path('catalog/books/<int:book_id>/reviews/', include('reviews.urls')),
