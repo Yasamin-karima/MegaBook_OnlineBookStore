@@ -99,7 +99,7 @@ export default function ChangePasswordPage({ onBack }) {
   return (
     <div dir="rtl" className="min-h-screen bg-gray-100 pb-12">
       <div className="mx-auto w-full max-w-md">
-        <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-gray-200 bg-gray-100/90 px-2 backdrop-blur">
+        <header className="sticky top-16 z-20 md:top-0 flex h-14 items-center justify-between border-b border-gray-200 bg-gray-100/90 px-2 backdrop-blur">
           <button
             type="button"
             onClick={onBack}

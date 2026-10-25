@@ -274,10 +274,12 @@ export default function ConversationPage({ kind = "request" }) {
 
 // h-dvh: ارتفاع واقعی صفحهٔ نمایش موبایل. h-screen در موبایل نوار آدرس
 // مرورگر را حساب نمی‌کند و پایین صفحه (همان جعبهٔ پیام) زیرش می‌رود.
+// زیر md نوار بالا (h-16) و پایین (h-14) برنامه هم هستند (AppLayout)، پس صفحه
+// همان فاصلهٔ میان دو نوار را پر می‌کند (7.5rem کمتر).
 function Shell({ kind, children }) {
   const goBack = useGoBack();
   return (
-    <div dir="rtl" className="flex h-dvh flex-col bg-gray-100">
+    <div dir="rtl" className="flex h-[calc(100dvh-7.5rem)] flex-col bg-gray-100 md:h-dvh">
       <div className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col md:max-w-5xl">
         <header className="flex h-14 shrink-0 items-center justify-between border-b border-gray-200 px-2">
           <button

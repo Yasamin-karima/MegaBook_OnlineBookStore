@@ -259,9 +259,9 @@ export default function CartPage({ onBack }) {
         )}
 
         {/* ═══ نوار پرداخت ═══
-            Mobile: fixed to the bottom of the screen. md+: the last card of the sticky side column.
-            این صفحه نوار ناوبری پایین برنامه را ندارد (مثل بقیهٔ صفحه‌های داخلی)، پس bottom-0 درست است. */}
-        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-gray-200 bg-white/95 backdrop-blur md:static md:z-auto md:mx-0 md:mt-4 md:rounded-2xl md:border md:bg-white md:shadow-sm md:backdrop-blur-none">
+            Mobile: fixed just above the app's bottom nav (BottomNavbar, h-14, on every page).
+            md+: the last card of the sticky side column. */}
+        <div className="fixed inset-x-0 bottom-14 z-20 border-t border-gray-200 bg-white/95 backdrop-blur md:static md:z-auto md:mx-0 md:mt-4 md:rounded-2xl md:border md:bg-white md:shadow-sm md:backdrop-blur-none">
           <div className="mx-auto max-w-md px-4 py-3 md:p-4">
             <button
               type="button"
@@ -303,7 +303,7 @@ function PageShell({ count, onBack, children }) {
   return (
     <div dir="rtl" className="min-h-screen bg-gray-100">
       <div className="mx-auto w-full max-w-md md:max-w-5xl">
-        <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-gray-200 bg-gray-100/90 px-2 backdrop-blur">
+        <header className="sticky top-16 z-20 md:top-0 flex h-14 items-center justify-between border-b border-gray-200 bg-gray-100/90 px-2 backdrop-blur">
           <button
             type="button"
             onClick={onBack ?? (() => window.history.back())}

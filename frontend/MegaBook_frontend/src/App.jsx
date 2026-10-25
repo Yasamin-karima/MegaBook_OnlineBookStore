@@ -34,28 +34,31 @@ import AdminUsersPage from './components/admin/AdminUsersPage';
 import AdminTaxonomyPage from './components/admin/AdminTaxonomyPage';
 import useGoBack from './hooks/useGoBack';
 
-// Every page except login/sign-up and the reader: on desktop (md+) a side nav on the right,
-// and the page is pushed left by its width (ps = padding on the start side, the right in RTL).
-// Below md this adds nothing: DesktopNav is hidden and the padding is 0.
+// Every store page (all but login/sign-up, the reader and the admin dashboard):
+//   below md: the top bar (Navbar, h-16) and the bottom bar (BottomNavbar, h-14) on every
+//   page, and the page is padded by their heights. Inner pages keep their own header
+//   (title, back button) under the top bar: sticky at top-16 below md, top-0 from md.
+//   md+: both bars are hidden; a side nav on the right instead, and the page is pushed
+//   left by its width (ps = padding on the start side, the right in RTL).
+// (DECISIONS 8.7, replaced: the bars used to be on the home page only.)
 const AppLayout = () => {
   return (
     <>
+      <Navbar />
+      <BottomNavbar />
       <DesktopNav />
-      <div className="md:ps-20 lg:ps-60">
+      <div className="pt-16 pb-14 md:pt-0 md:pb-0 md:ps-20 lg:ps-60">
         <Outlet />
       </div>
     </>
   )
 }
 
-// صفحه اصلی با نوار بالا/پایین و فوتر
-// On desktop both bars are hidden (DesktopNav replaces them), so their padding goes too.
+// صفحه اصلی با فوتر؛ نوارهای بالا و پایین را AppLayout می‌گذارد
 const Home = () => {
   return (
     <>
-      <BottomNavbar />
-      <Navbar />
-      <div className="pt-20 pb-20 md:pt-0 md:pb-0">
+      <div className="pt-4 pb-6 md:pt-0 md:pb-0">
         <HomePage />
         <Footer />
       </div>

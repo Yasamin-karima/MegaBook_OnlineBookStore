@@ -170,7 +170,7 @@ export default function MyRequestsUploadsPage() {
       {/* md+: the full width beside the side nav; the cards go into a grid */}
       <div className="mx-auto w-full max-w-md md:max-w-none">
         {/* ═══ نوار بالا و تب‌ها ═══ */}
-        <header className="sticky top-0 z-20 border-b border-gray-200 bg-gray-100/90 backdrop-blur">
+        <header className="sticky top-16 z-20 md:top-0 border-b border-gray-200 bg-gray-100/90 backdrop-blur">
           <div className="flex h-14 items-center justify-between px-2 md:px-4">
             <button
               type="button"

@@ -106,8 +106,9 @@ export default function BookReviews({ bookId, canReview, hasReview, onChanged, s
   const showWriteButton = loaded && canReview && !hasReview && !mine && formMode === null;
 
   return (
-    // scroll-mt: the sticky header (h-14) must not cover the heading when the summary scrolls here
-    <section id="reviews" className="mx-4 mt-6 scroll-mt-20 md:mx-0">
+    // scroll-mt: the sticky header (h-14), and below md the app's top bar (h-16) above it,
+    // must not cover the heading when the summary scrolls here
+    <section id="reviews" className="mx-4 mt-6 scroll-mt-36 md:mx-0 md:scroll-mt-20">
       <div className="mb-2 flex items-center justify-between gap-3">
         <h3 className="text-lg font-bold text-gray-900">نظرات خوانندگان</h3>
         {showWriteButton && (

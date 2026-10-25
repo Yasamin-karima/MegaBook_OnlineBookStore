@@ -137,7 +137,7 @@ export default function LibraryPage() {
       {/* md+: the full width beside the side nav, so the grid gets more columns */}
       <div className="mx-auto w-full max-w-md md:max-w-none">
         {/* ═══ نوار بالا ═══ */}
-        <header className="sticky top-0 z-20 border-b border-gray-200 bg-gray-100/90 backdrop-blur">
+        <header className="sticky top-16 z-20 md:top-0 border-b border-gray-200 bg-gray-100/90 backdrop-blur">
           <div className="flex h-14 items-center gap-1 px-2 md:px-6">
             {/* md+: hidden, the side nav already links to the store */}
             <Link
@@ -246,7 +246,7 @@ export default function LibraryPage() {
       {toast && (
         <div
           role="status"
-          className={`fixed inset-x-4 bottom-6 z-40 mx-auto max-w-sm rounded-2xl px-4 py-3 text-center text-sm text-white shadow-lg ${
+          className={`fixed inset-x-4 bottom-20 z-40 md:bottom-6 mx-auto max-w-sm rounded-2xl px-4 py-3 text-center text-sm text-white shadow-lg ${
             toast.tone === "red" ? "bg-red-600" : toast.tone === "green" ? "bg-green-600" : "bg-gray-900"
           }`}
         >

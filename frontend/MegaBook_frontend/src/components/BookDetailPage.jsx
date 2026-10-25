@@ -178,7 +178,7 @@ export default function BookDetailPage() {
       {/* md+: a wider page with two columns, see the grid below */}
       <div className="mx-auto w-full max-w-md md:max-w-5xl">
         {/* ═══ نوار بالا ═══ */}
-        <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-gray-200 bg-gray-100/90 px-2 backdrop-blur">
+        <header className="sticky top-16 z-20 md:top-0 flex h-14 items-center justify-between border-b border-gray-200 bg-gray-100/90 px-2 backdrop-blur">
           {/* در راست‌چین، «برگشت» سمت راست است و فلشش به راست اشاره می‌کند */}
           <button
             type="button"
@@ -243,11 +243,10 @@ export default function BookDetailPage() {
         </section>
 
         {/* ═══ نوار خرید ═══
-            Mobile: fixed to the bottom of the screen, so its place in the markup doesn't matter there.
-            md+: a card under the cover, kept in view by the sticky column around it.
-            این صفحه مثل بقیه‌ی صفحه‌های داخلی نوار ناوبری پایین برنامه (BottomNavbar) را ندارد؛
-            آن نوار فقط در صفحه‌ی اصلی است. پس bottom-0 درست است. */}
-        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-gray-200 bg-white/95 backdrop-blur md:static md:z-auto md:mt-6 md:rounded-2xl md:border md:bg-white md:shadow-sm md:backdrop-blur-none">
+            Mobile: fixed just above the app's bottom nav (BottomNavbar, h-14, on every page), so
+            its place in the markup doesn't matter there.
+            md+: a card under the cover, kept in view by the sticky column around it. */}
+        <div className="fixed inset-x-0 bottom-14 z-20 border-t border-gray-200 bg-white/95 backdrop-blur md:static md:z-auto md:mt-6 md:rounded-2xl md:border md:bg-white md:shadow-sm md:backdrop-blur-none">
           <div className="mx-auto flex max-w-md items-center gap-3 px-4 py-3 md:flex-col md:items-stretch md:p-4">
             {isOwned ? (
               // The reader page (BookReaderPage) fetches a signed link and shows the PDF
@@ -481,7 +480,7 @@ export default function BookDetailPage() {
       {toast && (
         <div
           role="status"
-          className="fixed inset-x-0 bottom-24 z-30 mx-auto w-fit md:bottom-8 rounded-full bg-gray-900 px-4 py-2 text-sm text-white shadow-lg"
+          className="fixed inset-x-0 bottom-40 z-30 mx-auto w-fit md:bottom-8 rounded-full bg-gray-900 px-4 py-2 text-sm text-white shadow-lg"
         >
           {toast}
         </div>

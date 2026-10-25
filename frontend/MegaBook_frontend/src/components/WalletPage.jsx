@@ -274,7 +274,7 @@ export default function WalletPage({ onBack }) {
     <div dir="rtl" className="min-h-screen bg-gray-100 pb-12">
       <div className="mx-auto w-full max-w-md md:max-w-2xl lg:max-w-6xl">
         {/* ═══ نوار بالا ═══ */}
-        <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-gray-200 bg-gray-100/90 px-2 backdrop-blur">
+        <header className="sticky top-16 z-20 md:top-0 flex h-14 items-center justify-between border-b border-gray-200 bg-gray-100/90 px-2 backdrop-blur">
           <button
             type="button"
             onClick={onBack ?? (() => window.history.back())}
@@ -553,7 +553,7 @@ export default function WalletPage({ onBack }) {
       {toast && (
         <div
           role="status"
-          className={`fixed inset-x-4 bottom-6 z-40 mx-auto max-w-sm rounded-2xl px-4 py-3 text-center text-sm text-white shadow-lg ${
+          className={`fixed inset-x-4 bottom-20 z-40 md:bottom-6 mx-auto max-w-sm rounded-2xl px-4 py-3 text-center text-sm text-white shadow-lg ${
             toast.tone === "red" ? "bg-red-600" : "bg-gray-900"
           }`}
         >

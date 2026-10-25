@@ -195,7 +195,7 @@ export default function PublicRequestsPage() {
       {/* md+: the full width beside the side nav; the request cards go into a grid */}
       <div className="mx-auto w-full max-w-md md:max-w-none">
         {/* ═══ نوار بالا ═══ */}
-        <header className="sticky top-0 z-20 flex h-14 items-center gap-1 border-b border-gray-200 bg-gray-100/90 px-2 backdrop-blur md:px-6">
+        <header className="sticky top-16 z-20 md:top-0 flex h-14 items-center gap-1 border-b border-gray-200 bg-gray-100/90 px-2 backdrop-blur md:px-6">
           {/* md+: hidden, the side nav already links to the store */}
           <Link
             to="/"
@@ -368,7 +368,7 @@ export default function PublicRequestsPage() {
       {toast && (
         <div
           role="status"
-          className="fixed inset-x-4 bottom-6 z-50 mx-auto max-w-sm rounded-2xl bg-gray-900 px-4 py-3 text-center text-sm text-white shadow-lg"
+          className="fixed inset-x-4 bottom-20 z-50 md:bottom-6 mx-auto max-w-sm rounded-2xl bg-gray-900 px-4 py-3 text-center text-sm text-white shadow-lg"
         >
           {toast}
         </div>
