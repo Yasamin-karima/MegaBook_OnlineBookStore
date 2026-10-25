@@ -1,7 +1,7 @@
 """/admin-api/: the React admin dashboard's API. Staff only; everyone else gets 404."""
 from django.urls import path
 
-from . import books, conversations, request_queue, taxonomy, wallet
+from . import books, conversations, request_queue, reviews, taxonomy, wallet
 
 
 def conversation_urls(prefix, find_parent, name):
@@ -49,4 +49,9 @@ urlpatterns = [
         name="admin_api_withdrawal_reject",
     ),
     path("wallet/adjustments/", wallet.AdjustmentView.as_view(), name="admin_api_adjustments"),
+    # Reviews
+    path("reviews/", reviews.ReviewListView.as_view(), name="admin_api_reviews"),
+    path("reviews/<int:pk>/check/", reviews.ReviewActionView.as_view(action="check"), name="admin_api_review_check"),
+    path("reviews/<int:pk>/hide/", reviews.ReviewActionView.as_view(action="hide"), name="admin_api_review_hide"),
+    path("reviews/<int:pk>/unhide/", reviews.ReviewActionView.as_view(action="unhide"), name="admin_api_review_unhide"),
 ]
